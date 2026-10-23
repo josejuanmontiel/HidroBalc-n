@@ -1,0 +1,13 @@
+{
+  "appId": "app.hidrobalcon.riego",
+  "appName": "HidroBalcón",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon_config_sample",
+      "iconColor": "#10B981",
+      "sound": "beep.wav"
+    }
+  }
+}

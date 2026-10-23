@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064e3b"/>
+      <stop offset="100%" stop-color="#022c22"/>
+    </linearGradient>
+    <linearGradient id="dropGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="leafGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <!-- Background rounded rect -->
+  <rect width="64" height="64" rx="16" fill="url(#bgGrad)"/>
+  
+  <!-- Terracotta pot outline at bottom -->
+  <path d="M20 44 L24 54 L40 54 L44 44 Z" fill="#b45309" opacity="0.9"/>
+  <rect x="18" y="41" width="28" height="4" rx="1.5" fill="#d97706"/>
+
+  <!-- Sprout stem & leaves -->
+  <path d="M32 41 Q32 28 32 20" stroke="#10b981" stroke-width="3" stroke-linecap="round"/>
+  <!-- Left Leaf -->
+  <path d="M32 30 C22 30 18 20 22 17 C26 15 32 23 32 27 Z" fill="url(#leafGrad)"/>
+  <!-- Right Leaf -->
+  <path d="M32 24 C42 24 46 14 42 11 C38 9 32 17 32 21 Z" fill="url(#leafGrad)"/>
+
+  <!-- Water Drop in center -->
+  <path d="M32 8 C32 8 26 18 26 23 C26 26.3 28.7 29 32 29 C35.3 29 38 26.3 38 23 C38 18 32 8 32 8 Z" fill="url(#dropGrad)"/>
+  <circle cx="30" cy="21" r="1.5" fill="#ffffff" opacity="0.7"/>
+</svg>
