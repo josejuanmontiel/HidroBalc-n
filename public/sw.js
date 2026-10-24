@@ -4,12 +4,12 @@
  * Estrategia Network-First para asegurar código actualizado en caliente con fallback a caché offline.
  */
 
-const CACHE_NAME = 'hidrobalcon-cache-v2';
+const CACHE_NAME = 'hidrobalcon-cache-v3';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/favicon.svg',
-  '/manifest.webmanifest'
+  './',
+  './index.html',
+  './favicon.svg',
+  './manifest.webmanifest'
 ];
 
 self.addEventListener('install', (event) => {

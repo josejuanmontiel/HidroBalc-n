@@ -2,14 +2,14 @@
   "name": "HidroBalcón - Riego Inteligente",
   "short_name": "HidroBalcón",
   "description": "Calendario de riego agronómico para terrazas y macetas con detección de heladas y cálculo de evaporación sin servidor.",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#090d16",
   "theme_color": "#10b981",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/favicon.svg",
+      "src": "./favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
