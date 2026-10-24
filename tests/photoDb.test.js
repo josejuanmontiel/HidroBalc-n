@@ -25,5 +25,8 @@ describe('Gestor de Fotos e Historial de Evolución (IndexedDB)', () => {
 
     const updateRes = await pDb.updatePhoto('fake-id', { note: 'test' });
     expect(updateRes).toBe(false);
+
+    const toggleRes = await pDb.toggleInstructionPhoto('fake-id');
+    expect(toggleRes).toBe(false);
   });
 });

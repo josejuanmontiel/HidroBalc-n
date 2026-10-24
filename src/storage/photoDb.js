@@ -229,6 +229,46 @@ export class PhotoDatabase {
   }
 
   /**
+   * Marca o desmarca una foto como foto de instrucciones / etiqueta (permite múltiples fotos de instrucciones)
+   */
+  async toggleInstructionPhoto(photoId) {
+    const db = await this.dbPromise;
+    if (!db) return false;
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const getReq = store.get(photoId);
+
+      getReq.onsuccess = () => {
+        const photo = getReq.result;
+        if (!photo) {
+          resolve(false);
+          return;
+        }
+
+        const isCurrentlyInstruction = Boolean(photo.isInstruction || (photo.tag && photo.tag.includes('Etiqueta')) || (photo.note && (photo.note.includes('Etiqueta') || photo.note.includes('Instrucciones'))));
+        const newStatus = !isCurrentlyInstruction;
+
+        const updated = {
+          ...photo,
+          isInstruction: newStatus,
+          tag: newStatus ? 'Etiqueta/Instrucciones' : (photo.tag === 'Etiqueta/Instrucciones' || photo.tag === 'Etiqueta' ? '' : photo.tag),
+          note: newStatus 
+            ? ((photo.note && (photo.note.includes('Etiqueta') || photo.note.includes('Instrucciones'))) ? photo.note : '🏷️ Etiqueta / Instrucciones de cuidado')
+            : (photo.note && (photo.note.includes('Etiqueta') || photo.note.includes('Instrucciones')) ? 'Progreso habitual' : photo.note)
+        };
+
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve(true);
+        putReq.onerror = (e) => reject(e.target.error);
+      };
+
+      getReq.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /**
    * Marca una foto como la foto inicial de referencia de la planta
    */
   async setInitialPhoto(potId, photoId) {

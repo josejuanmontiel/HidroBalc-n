@@ -28,15 +28,18 @@ Aplicación web progresiva (**PWA**) y móvil para el **cálculo agronómico de 
 * **Deep Linking Directo (`?view=tasks`):** La notificación y el evento del calendario abren la app directamente en el **Checklist Interactivo** del día.
 * **Temporizador de Inmersión:** Campana de audio armónica sintetizada con Web Audio API (1, 3, 5 y 15 min) para orquídeas o riego por capilaridad.
 
-### 📸 4. Álbum de Fotos & Evolución Botánica
+### 📸 4. Álbum de Fotos, Collages & Evolución Botánica
 * Captura directa desde la cámara del móvil.
 * **Compresión en cliente a WebP** (~50 KB) con persistencia offline en **IndexedDB**.
-* **Gestión de Portada y Foto Inicial:** Elección de cualquier foto como portada del balcón y fijación de foto inicial para la comparativa "Antes vs Hoy".
-* **Sección de Etiquetas Botánicas:** Categorización y badges para fotos de etiquetas comerciales o fichas botánicas de plantas.
+* **Gestión de Portada y Botón de Instrucciones:** Elección de foto de portada y asignación ágil de una o varias fotos al bloque de **Instrucciones / Etiquetas de cuidado**.
+* **Collages Visuales Interactivos:**
+  * **Collage de Instrucciones & Etiquetas:** Muestra de forma agrupada en rejilla adaptable (1, 2, 3 o múltiples fotos) las fichas botánicas o instrucciones de compra para consultarlas a pantalla completa con un toque.
+  * **Collage de Evolución & Crecimiento:** Agrupación visual del progreso cronológico de la planta (foto inicial, estados intermedios y actualidad) con cálculo de días transcurridos.
 * **Edición Rápida de Nombre:** Renombrado directo con un toque en cualquier maceta ya creada.
 
-### 🪴 5. Jardineras Corridas Compartidas & Retroalimentación de Riego
-* **Contenedores Padre (Jardineras Corridas):** Gestión de jardineras grandes (>25L, barro o plástico) que alojan varias plantas botánicas en sus compartimentos o secciones. Las plantas heredan la inercia térmica y el sustrato se prorratea para un cálculo de secado y dosis mucho más preciso.
+### 🪴 5. Jardineras Corridas Compartidas con Cálculo de Dimensiones y Litros
+* **Contenedores Padre (Jardineras Corridas):** Gestión de jardineras grandes que alojan varias plantas botánicas en sus compartimentos o secciones.
+* **Cálculo Automático por Dimensiones:** Introducción de largo, ancho y profundidad (cm) con estimación matemática en vivo del volumen en litros ($(L \times A \times P)/1000$) y ajuste manual flexible. Las plantas heredan la inercia térmica y el sustrato se prorratea para un cálculo de secado y dosis mucho más preciso.
 * **Modal de Confirmación & Ajuste de Riego:** Posibilidad de regular los vasos vertidos reales (50%, 75%, 100%, 125% o con selector continuo). Si decides regar menos, el motor Go Wasm recibe la retroalimentación y calibra automáticamente el factor de retención hídrica.
 
 ### 📱 6. PWA & Preparado para APK Android

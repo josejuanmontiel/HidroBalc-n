@@ -1553,40 +1553,79 @@ class HidroBalconApp {
 
     const photos = await photoDb.getPhotosByPot(potId);
 
-    let comparisonHtml = '';
-    const initialPhoto = await photoDb.getInitialPhoto(potId);
-    const newest = photos[0];
+    // Identificar fotos marcadas como instrucciones/etiqueta
+    const instructionPhotos = photos.filter(p => 
+      p.isInstruction || (p.tag && p.tag.includes('Etiqueta')) || (p.note && (p.note.includes('Etiqueta') || p.note.includes('Instrucciones')))
+    );
 
-    if (photos.length >= 2 && initialPhoto && newest && initialPhoto.id !== newest.id) {
-      const daysDiff = Math.max(0, Math.round((new Date(newest.date) - new Date(initialPhoto.date)) / (1000 * 60 * 60 * 24)));
+    // Fotos de evolución/progreso botánico (todas excepto las que son puramente instrucciones)
+    const evolutionPhotos = photos.filter(p => !instructionPhotos.some(ip => ip.id === p.id));
+    const initialPhoto = await photoDb.getInitialPhoto(potId);
+    const newest = evolutionPhotos[0] || photos[0];
+
+    // Helper para determinar clase CSS del collage según cantidad de fotos
+    const getCollageClass = (count) => {
+      if (count === 1) return 'collage-grid-1';
+      if (count === 2) return 'collage-grid-2';
+      if (count === 3) return 'collage-grid-3';
+      if (count === 4) return 'collage-grid-4';
+      return 'collage-grid-multi';
+    };
+
+    // Bloque Collage 1: Instrucciones y Etiquetas (soporta 1 o múltiples fotos)
+    let instructionsHtml = '';
+    if (instructionPhotos.length > 0) {
+      instructionsHtml = `
+        <div class="instructions-section-box">
+          <div class="instructions-section-header">
+            <strong style="color:#fcd34d; font-size:0.85rem; display:flex; align-items:center; gap:0.4rem;">
+              🏷️ Fichas, Etiquetas & Instrucciones (${instructionPhotos.length})
+            </strong>
+            <span class="tag tag-photo-label" style="font-size:0.68rem;">Collage de cuidados</span>
+          </div>
+          <div class="${getCollageClass(instructionPhotos.length)}">
+            ${instructionPhotos.map(photo => {
+              const dStr = new Date(photo.date).toLocaleDateString('es-ES', { day:'numeric', month:'short' });
+              return `
+                <div class="collage-item btn-view-full-photo" data-img="${photo.dataUrl}" data-title="${photo.note || 'Instrucciones'} (${dStr})" title="Toca para ampliar foto">
+                  <img src="${photo.dataUrl}" alt="Instrucción / Etiqueta" loading="lazy" />
+                  <div class="collage-item-badge">🏷️ ${photo.note || 'Instrucciones'}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // Bloque Collage 2: Comparativa de Crecimiento & Evolución (Antes vs Hoy / Collage)
+    let comparisonHtml = '';
+    if (evolutionPhotos.length >= 2) {
+      const oldestEvol = evolutionPhotos[evolutionPhotos.length - 1];
+      const newestEvol = evolutionPhotos[0];
+      const daysDiff = Math.max(0, Math.round((new Date(newestEvol.date) - new Date(oldestEvol.date)) / (1000 * 60 * 60 * 24)));
 
       comparisonHtml = `
         <div class="comparison-box">
           <div class="comparison-header">
-            <strong style="color:#ffffff; font-size:0.85rem;">🔄 Comparativa: Foto Inicial vs Hoy</strong>
+            <strong style="color:#ffffff; font-size:0.85rem;">🔄 Evolución y Crecimiento (${evolutionPhotos.length} fotos)</strong>
             <span class="tag tag-covered">⏳ ${daysDiff} días de evolución</span>
           </div>
-          <div class="comparison-grid">
-            <div class="comparison-card">
-              <div class="comparison-img-wrap">
-                <img src="${initialPhoto.dataUrl}" alt="Inicio" />
-                <span class="comparison-badge" style="background:#3b82f6;">Inicial</span>
-              </div>
-              <div class="comparison-meta">
-                ${new Date(initialPhoto.date).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' })}
-                ${initialPhoto.note ? `• ${initialPhoto.note}` : ''}
-              </div>
-            </div>
-            <div class="comparison-card">
-              <div class="comparison-img-wrap">
-                <img src="${newest.dataUrl}" alt="Actualidad" />
-                <span class="comparison-badge" style="background:rgba(16, 185, 129, 0.85);">Actual</span>
-              </div>
-              <div class="comparison-meta">
-                ${new Date(newest.date).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' })}
-                ${newest.note ? `• ${newest.note}` : ''}
-              </div>
-            </div>
+          <div class="${getCollageClass(Math.min(evolutionPhotos.length, 4))}">
+            ${evolutionPhotos.slice(0, 4).map((photo, idx) => {
+              const isOldest = idx === evolutionPhotos.slice(0, 4).length - 1;
+              const isNew = idx === 0;
+              const badgeLabel = isNew ? 'Actual' : isOldest ? 'Inicio' : 'Evolución';
+              const badgeColor = isNew ? '#10b981' : isOldest ? '#3b82f6' : 'rgba(0,0,0,0.7)';
+              const dStr = new Date(photo.date).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' });
+              return `
+                <div class="collage-item btn-view-full-photo" data-img="${photo.dataUrl}" data-title="Evolución (${dStr})" title="Toca para ampliar foto">
+                  <img src="${photo.dataUrl}" alt="Evolución ${dStr}" loading="lazy" />
+                  <span class="comparison-badge" style="background:${badgeColor}; font-size:0.65rem;">${badgeLabel}</span>
+                  <div class="collage-item-badge">${dStr}</div>
+                </div>
+              `;
+            }).join('')}
           </div>
         </div>
       `;
@@ -1629,11 +1668,6 @@ class HidroBalconApp {
                 ${PHOTO_TYPE_OPTIONS.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('')}
               </select>
 
-              <label style="display:flex; align-items:center; gap:0.35rem; font-size:0.75rem; color:var(--text-muted); cursor:pointer;">
-                <input type="checkbox" id="check-new-is-initial" />
-                <span>Foto Inicial</span>
-              </label>
-
               <button class="btn btn-sm btn-primary" id="btn-save-photo" disabled>
                 Guardar Foto
               </button>
@@ -1644,14 +1678,17 @@ class HidroBalconApp {
             </div>
           </div>
 
-          <!-- BEFORE AND AFTER COMPARISON IF >= 2 PHOTOS -->
+          <!-- BLOQUE 1: INSTRUCCIONES / ETIQUETAS (COLLAGE MULTI-FOTO) -->
+          ${instructionsHtml}
+
+          <!-- BLOQUE 2: COMPARATIVA / COLLAGE DE EVOLUCIÓN (ANTES VS HOY) -->
           ${comparisonHtml}
 
           <!-- PHOTOS TIMELINE LIST -->
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
-              <strong style="font-size:0.85rem; color:#ffffff;">Galería de Fotos (${photos.length})</strong>
-              <span style="font-size:0.72rem; color:var(--text-muted);">Puedes cambiar el tipo/etiqueta, portada o foto inicial de cualquiera</span>
+              <strong style="font-size:0.85rem; color:#ffffff;">Todas las Fotos (${photos.length})</strong>
+              <span style="font-size:0.72rem; color:var(--text-muted);">Elige portada, pulsa "🏷️ Instrucciones" o cambia el tipo</span>
             </div>
 
             <div class="photos-timeline" id="photos-timeline-grid">
@@ -1663,8 +1700,11 @@ class HidroBalconApp {
                   year: 'numeric'
                 });
 
-                const isInitial = photo.isInitial || (initialPhoto && initialPhoto.id === photo.id);
-                const isLabelTag = (photo.note && (photo.note.includes('Etiqueta') || photo.note.includes('Instrucciones'))) || (photo.tag && (photo.tag.includes('Etiqueta') || photo.tag.includes('Instrucciones')));
+                const isInstruction = Boolean(
+                  photo.isInstruction || 
+                  (photo.tag && photo.tag.includes('Etiqueta')) || 
+                  (photo.note && (photo.note.includes('Etiqueta') || photo.note.includes('Instrucciones')))
+                );
 
                 const matchingOption = PHOTO_TYPE_OPTIONS.find(opt => opt.value === photo.note || (photo.note && photo.note.includes('Etiqueta') && opt.value.includes('Etiqueta')));
                 const selectedVal = matchingOption ? matchingOption.value : (photo.note || 'Progreso habitual');
@@ -1674,13 +1714,13 @@ class HidroBalconApp {
                     <div class="photo-card-img-wrap">
                       <img src="${photo.dataUrl}" alt="Foto ${dateStr}" loading="lazy" />
                       ${photo.isCover ? '<span class="photo-card-cover-badge">★ Portada</span>' : ''}
-                      ${isInitial ? '<span class="photo-card-initial-badge">🌱 Inicial</span>' : ''}
+                      ${isInstruction ? '<span class="photo-card-instruction-badge">🏷️ Instrucción</span>' : ''}
                     </div>
                     <div class="photo-card-info">
                       <div>
                         <div class="photo-date">${dateStr}</div>
-                        ${photo.tag && !isLabelTag ? `<div class="tag tag-climate-control" style="font-size:0.65rem; margin-top:0.2rem; display:inline-block;">${photo.tag}</div>` : ''}
-                        ${isLabelTag ? `<div class="tag tag-photo-label" style="font-size:0.65rem; margin-top:0.2rem; display:inline-block;">🏷️ Etiqueta / Instrucciones</div>` : ''}
+                        ${photo.tag && !isInstruction ? `<div class="tag tag-climate-control" style="font-size:0.65rem; margin-top:0.2rem; display:inline-block;">${photo.tag}</div>` : ''}
+                        ${isInstruction ? `<div class="tag tag-photo-label" style="font-size:0.65rem; margin-top:0.2rem; display:inline-block;">🏷️ Etiqueta / Instrucciones</div>` : ''}
                       </div>
 
                       <div style="margin-top:0.35rem;">
@@ -1701,11 +1741,9 @@ class HidroBalconApp {
                             ★ Portada
                           </button>
                         ` : ''}
-                        ${!isInitial ? `
-                          <button class="btn btn-sm btn-make-initial" data-id="${photo.id}" title="Fijar como foto inicial para la comparativa de crecimiento">
-                            🌱 Inicial
-                          </button>
-                        ` : ''}
+                        <button class="btn btn-sm btn-make-instruction ${isInstruction ? 'active' : ''}" data-id="${photo.id}" title="${isInstruction ? 'Quitar de bloque de instrucciones' : 'Marcar para bloque de instrucciones/etiqueta'}">
+                          ${isInstruction ? '✓ Es Instrucción' : '🏷️ Instrucciones'}
+                        </button>
                         <button class="btn btn-sm btn-danger btn-delete-photo" data-id="${photo.id}" title="Eliminar esta foto">
                           🗑️
                         </button>
@@ -1725,6 +1763,27 @@ class HidroBalconApp {
     `;
 
     document.getElementById('btn-close-photos-modal')?.addEventListener('click', () => { container.innerHTML = ''; });
+
+    // Click en collage para ver foto ampliada
+    document.querySelectorAll('.btn-view-full-photo').forEach(elem => {
+      elem.addEventListener('click', () => {
+        const imgUrl = elem.dataset.img;
+        const title = elem.dataset.title;
+        if (imgUrl) {
+          const w = window.open('');
+          if (w) {
+            w.document.write(`
+              <html>
+                <head><title>${title || 'Foto'}</title></head>
+                <body style="margin:0; background:#0f172a; display:flex; align-items:center; justify-content:center; height:100vh;">
+                  <img src="${imgUrl}" style="max-width:95vw; max-height:95vh; object-fit:contain; border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.7);" />
+                </body>
+              </html>
+            `);
+          }
+        }
+      });
+    });
 
     const fileInput = document.getElementById('input-new-photo');
     const saveBtn = document.getElementById('btn-save-photo');
@@ -1758,7 +1817,6 @@ class HidroBalconApp {
     saveBtn?.addEventListener('click', async () => {
       if (!pendingCompressed) return;
       const note = document.getElementById('select-photo-note')?.value || '';
-      const isInitialChecked = document.getElementById('check-new-is-initial')?.checked || false;
       const isLabel = note.includes('Etiqueta') || note.includes('Instrucciones');
       saveBtn.disabled = true;
       saveBtn.innerText = 'Guardando...';
@@ -1772,10 +1830,11 @@ class HidroBalconApp {
         tag: isLabel ? 'Etiqueta/Instrucciones' : '',
         date: new Date().toISOString(),
         isCover: isFirst,
-        isInitial: isFirst || isInitialChecked
+        isInstruction: isLabel,
+        isInitial: isFirst && !isLabel
       });
 
-      this.showToast('Foto añadida al historial de la maceta 📸', 'success');
+      this.showToast('Foto añadida a la maceta 📸', 'success');
       await this.refreshData();
       this.render();
       this.openPhotosModal(potId);
@@ -1789,6 +1848,7 @@ class HidroBalconApp {
         const isLabel = newNote.includes('Etiqueta') || newNote.includes('Instrucciones');
         await photoDb.updatePhoto(photoId, {
           note: newNote,
+          isInstruction: isLabel,
           tag: isLabel ? 'Etiqueta/Instrucciones' : ''
         });
         this.showToast('Tipo de foto actualizado 🏷️', 'success');
@@ -1809,11 +1869,12 @@ class HidroBalconApp {
       });
     });
 
-    document.querySelectorAll('.btn-make-initial').forEach(btn => {
+    // Botón para alternar foto como Instrucciones / Etiquetas
+    document.querySelectorAll('.btn-make-instruction').forEach(btn => {
       btn.addEventListener('click', async () => {
         const photoId = btn.dataset.id;
-        await photoDb.setInitialPhoto(potId, photoId);
-        this.showToast('Foto inicial de referencia actualizada 🌱', 'success');
+        await photoDb.toggleInstructionPhoto(photoId);
+        this.showToast('Bloque de instrucciones actualizado 🏷️', 'success');
         await this.refreshData();
         this.render();
         this.openPhotosModal(potId);
