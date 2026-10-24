@@ -468,31 +468,32 @@ class HidroBalconApp {
 
             return `
               <div class="task-item-card ${completed ? 'is-completed' : ''}" id="task-card-${pot.id}">
-                <div class="task-left-col">
-                  <button class="task-checkbox-btn btn-task-toggle" data-id="${pot.id}" title="${completed ? 'Marcar como pendiente' : 'Marcar como regada'}">
+                <div class="task-card-main">
+                  <button class="task-checkbox-btn btn-task-toggle" data-id="${pot.id}" aria-label="${completed ? 'Marcar como pendiente' : 'Marcar como regada'}" title="${completed ? 'Marcar como pendiente' : 'Marcar como regada'}">
                     ${completed ? '✓' : ''}
                   </button>
 
-                  ${coverPhoto
-                    ? `<img src="${coverPhoto}" alt="${pot.name}" class="pot-thumb-img" style="width:48px; height:48px;" />`
-                    : `<span style="font-size:1.6rem;">${plant.icon}</span>`
-                  }
+                  <div class="task-thumb-wrap">
+                    ${coverPhoto
+                      ? `<img src="${coverPhoto}" alt="${pot.name}" class="pot-thumb-img" />`
+                      : `<div class="pot-thumb-placeholder">${plant.icon}</div>`
+                    }
+                  </div>
 
                   <div class="task-details">
-                    <h4>
-                      <span>${pot.name}</span>
-                      ${completed ? '<span class="tag tag-covered" style="font-size:0.68rem;">✓ Regada</span>' : ''}
-                    </h4>
-                    <div class="task-subinfo">
-                      <span>🪴 ${calc.material.label.split('(')[0]}</span>
-                      <span>💧 Humedad: <strong>${calc.soilMoisturePercent}%</strong></span>
-                      <span>🕒 ${calc.bestTimeOfDay}</span>
+                    <div class="task-title-row">
+                      <h4>${pot.name}</h4>
+                      ${completed ? '<span class="task-badge-completed">✓ Regada</span>' : ''}
                     </div>
 
-                    <!-- Dosis calculada por Wasm -->
-                    <div class="dose-pill ${dose.isAdapted ? 'is-adapted' : ''}">
-                      <span>💧 Dosis Wasm: <strong>${dose.doseGlasses} vasos</strong> (~${dose.doseMl} ml)</span>
-                      <span class="wasm-tag ${dose.isAdapted ? 'wasm-adapted' : ''}">${dose.isAdapted ? '✨ Calibrada' : 'Wasm'}</span>
+                    <div class="task-subinfo">
+                      <span class="task-info-chip">🪴 ${calc.material.label.split('(')[0]}</span>
+                      <span class="task-info-chip">💧 Humedad: <strong>${calc.soilMoisturePercent}%</strong></span>
+                      <span class="task-info-chip">🕒 ${calc.bestTimeOfDay}</span>
+                      <span class="dose-pill ${dose.isAdapted ? 'is-adapted' : ''}">
+                        💧 <strong>${dose.doseGlasses} vasos</strong> (~${dose.doseMl} ml)
+                        <span class="wasm-tag ${dose.isAdapted ? 'wasm-adapted' : ''}">${dose.isAdapted ? '✨ Calibrada' : 'Wasm'}</span>
+                      </span>
                     </div>
 
                     <div class="task-tip">
@@ -501,21 +502,23 @@ class HidroBalconApp {
                   </div>
                 </div>
 
-                <div class="task-right-col">
-                  <button class="btn btn-sm btn-action-finger" data-id="${pot.id}" title="Calibrar con la prueba del dedo">
-                    👉 Dedo
-                  </button>
-                  <button class="btn btn-sm btn-action-photos" data-id="${pot.id}" title="Ver fotos y evolución">
-                    📸
-                  </button>
-                  <button class="btn btn-sm btn-action-climate-photo" data-id="${pot.id}" title="Foto de control climático">
-                    📷
-                  </button>
-                  <button class="btn btn-sm btn-action-timer" data-id="${pot.id}" title="Temporizador de inmersión / riego para esta maceta">
-                    ⏱️
-                  </button>
+                <div class="task-actions-toolbar">
+                  <div class="task-tools-group">
+                    <button class="btn btn-sm btn-task-tool btn-action-finger" data-id="${pot.id}" title="Calibrar con la prueba del dedo">
+                      👉 <span>Dedo</span>
+                    </button>
+                    <button class="btn btn-sm btn-task-tool btn-action-photos" data-id="${pot.id}" title="Ver fotos y evolución">
+                      📸 <span>Fotos</span>
+                    </button>
+                    <button class="btn btn-sm btn-task-tool btn-action-climate-photo" data-id="${pot.id}" title="Foto de control climático">
+                      📷 <span>Control</span>
+                    </button>
+                    <button class="btn btn-sm btn-task-tool btn-action-timer" data-id="${pot.id}" title="Temporizador de inmersión / riego">
+                      ⏱️ <span>Timer</span>
+                    </button>
+                  </div>
                   <button class="btn btn-sm ${completed ? '' : 'btn-water'} btn-task-water-single" data-id="${pot.id}">
-                    ${completed ? 'Volver a Regar' : '💧 Regar'}
+                    ${completed ? '↩ Volver a Regar' : '💧 Regar'}
                   </button>
                 </div>
               </div>

@@ -1228,36 +1228,49 @@ body {
 .task-item-card {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  padding: 1rem 1.25rem;
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.15rem;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.85rem;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+}
+
+@media (min-width: 820px) {
+  .task-item-card {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    padding: 0.95rem 1.25rem;
+  }
 }
 
 .task-item-card:hover {
   background: var(--bg-card-hover);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
 }
 
 .task-item-card.is-completed {
-  border-color: rgba(16, 185, 129, 0.3);
-  background: rgba(16, 185, 129, 0.04);
-  opacity: 0.85;
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.05);
+  opacity: 0.88;
 }
 
-.task-left-col {
+/* Card Main Area */
+.task-card-main {
   display: flex;
-  align-items: center;
-  gap: 1rem;
+  align-items: flex-start;
+  gap: 0.85rem;
   flex: 1;
+  min-width: 0;
 }
 
 .task-checkbox-btn {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: var(--radius-sm);
   border: 2px solid var(--border-subtle);
   background: rgba(255, 255, 255, 0.05);
@@ -1265,21 +1278,53 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 1.1rem;
+  font-size: 1.15rem;
+  font-weight: 800;
   color: transparent;
   transition: all 0.2s;
   flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .task-checkbox-btn:hover {
   border-color: var(--primary-light);
-  background: rgba(16, 185, 129, 0.15);
+  background: rgba(16, 185, 129, 0.18);
+  transform: scale(1.05);
 }
 
 .task-item-card.is-completed .task-checkbox-btn {
   background: #10b981;
   border-color: #34d399;
   color: #ffffff;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+}
+
+.task-thumb-wrap {
+  flex-shrink: 0;
+}
+
+.pot-thumb-placeholder {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+}
+
+.task-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .task-details h4 {
@@ -1287,9 +1332,8 @@ body {
   font-size: 1.05rem;
   font-weight: 700;
   color: #ffffff;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .task-item-card.is-completed .task-details h4 {
@@ -1297,29 +1341,97 @@ body {
   color: var(--text-muted);
 }
 
+.task-badge-completed {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+}
+
 .task-subinfo {
   font-size: 0.78rem;
   color: var(--text-muted);
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-top: 0.2rem;
+  align-items: center;
+  gap: 0.4rem 0.65rem;
+  margin-top: 0.35rem;
+}
+
+.task-info-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.task-item-card .dose-pill {
+  margin-top: 0;
+  padding: 0.18rem 0.5rem;
+  font-size: 0.74rem;
 }
 
 .task-tip {
-  font-size: 0.78rem;
+  font-size: 0.77rem;
+  line-height: 1.35;
   color: #a7f3d0;
-  background: rgba(16, 185, 129, 0.1);
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--radius-sm);
-  margin-top: 0.35rem;
-  display: inline-block;
+  background: rgba(16, 185, 129, 0.08);
+  border-left: 2px solid #10b981;
+  padding: 0.3rem 0.6rem;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  margin-top: 0.45rem;
 }
 
-.task-right-col {
+/* Actions Toolbar */
+.task-actions-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+@media (min-width: 820px) {
+  .task-actions-toolbar {
+    padding-top: 0;
+    border-top: none;
+    justify-content: flex-end;
+  }
+}
+
+.task-tools-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.btn-task-tool {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  padding: 0.35rem 0.55rem;
+  font-size: 0.76rem;
+}
+
+.btn-task-tool:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.btn-task-water-single {
+  padding: 0.45rem 0.95rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 /* ==========================================================================
