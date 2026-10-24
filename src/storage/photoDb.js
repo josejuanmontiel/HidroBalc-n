@@ -255,6 +255,35 @@ export class PhotoDatabase {
       tx.onerror = (e) => reject(e.target.error);
     });
   }
+
+  /**
+   * Actualiza los metadatos de una foto (nota, tag, etc.)
+   */
+  async updatePhoto(photoId, updates = {}) {
+    const db = await this.dbPromise;
+    if (!db) return false;
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const getReq = store.get(photoId);
+
+      getReq.onsuccess = () => {
+        const photo = getReq.result;
+        if (!photo) {
+          resolve(false);
+          return;
+        }
+
+        const updated = { ...photo, ...updates };
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve(true);
+        putReq.onerror = (e) => reject(e.target.error);
+      };
+
+      getReq.onerror = (e) => reject(e.target.error);
+    });
+  }
 }
 
 export const photoDb = new PhotoDatabase();

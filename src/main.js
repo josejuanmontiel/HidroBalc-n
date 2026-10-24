@@ -1592,6 +1592,20 @@ class HidroBalconApp {
       `;
     }
 
+    const PHOTO_TYPE_OPTIONS = [
+      { value: 'Progreso habitual', label: '🌱 Progreso habitual' },
+      { value: '🏷️ Etiqueta / Instrucciones de cuidado', label: '🏷️ Etiqueta / Instrucciones' },
+      { value: 'Primer brote', label: '🌿 Primer brote' },
+      { value: 'Floración', label: '🌸 Floración' },
+      { value: 'Aparición de frutos', label: '🍅 Aparición de frutos' },
+      { value: 'Trasplante de maceta', label: '🪴 Trasplante de maceta' },
+      { value: 'Poda o pinzado', label: '✂️ Poda o pinzado' },
+      { value: 'Abonado', label: '🧪 Abonado' },
+      { value: 'Resistencia tras helada', label: '❄️ Tras la helada' },
+      { value: 'Control tras ola de calor', label: '🔥 Tras ola de calor' },
+      { value: 'Control tras temporal', label: '⛈️ Tras el temporal' }
+    ];
+
     container.innerHTML = `
       <div class="modal-overlay active" id="photos-modal">
         <div class="modal-content photo-modal-content">
@@ -1611,18 +1625,8 @@ class HidroBalconApp {
                 <input type="file" id="input-new-photo" accept="image/*" capture="environment" />
               </div>
 
-              <select id="select-photo-note" class="form-select" style="font-size:0.75rem; padding:0.35rem 0.5rem; flex:1; min-width:140px;">
-                <option value="Progreso habitual">🌱 Progreso habitual</option>
-                <option value="🏷️ Foto de Etiqueta / Ficha botánica">🏷️ Foto de Etiqueta / Ficha</option>
-                <option value="Primer brote">🌿 Primer brote</option>
-                <option value="Floración">🌸 Floración</option>
-                <option value="Aparición de frutos">🍅 Frutos</option>
-                <option value="Trasplante de maceta">🪴 Trasplante</option>
-                <option value="Poda o pinzado">✂️ Poda</option>
-                <option value="Abonado">🧪 Abonado</option>
-                <option value="Resistencia tras helada">❄️ Tras la helada</option>
-                <option value="Control tras ola de calor">🔥 Tras ola de calor</option>
-                <option value="Control tras temporal">⛈️ Tras el temporal</option>
+              <select id="select-photo-note" class="form-select" style="font-size:0.75rem; padding:0.35rem 0.5rem; flex:1; min-width:160px;">
+                ${PHOTO_TYPE_OPTIONS.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('')}
               </select>
 
               <label style="display:flex; align-items:center; gap:0.35rem; font-size:0.75rem; color:var(--text-muted); cursor:pointer;">
@@ -1647,7 +1651,7 @@ class HidroBalconApp {
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
               <strong style="font-size:0.85rem; color:#ffffff;">Galería de Fotos (${photos.length})</strong>
-              <span style="font-size:0.72rem; color:var(--text-muted);">Puedes cambiar la foto de portada o la foto inicial de referencia</span>
+              <span style="font-size:0.72rem; color:var(--text-muted);">Puedes cambiar el tipo/etiqueta, portada o foto inicial de cualquiera</span>
             </div>
 
             <div class="photos-timeline" id="photos-timeline-grid">
@@ -1660,7 +1664,10 @@ class HidroBalconApp {
                 });
 
                 const isInitial = photo.isInitial || (initialPhoto && initialPhoto.id === photo.id);
-                const isLabelTag = (photo.note && photo.note.includes('Etiqueta')) || (photo.tag && photo.tag.includes('Etiqueta'));
+                const isLabelTag = (photo.note && (photo.note.includes('Etiqueta') || photo.note.includes('Instrucciones'))) || (photo.tag && (photo.tag.includes('Etiqueta') || photo.tag.includes('Instrucciones')));
+
+                const matchingOption = PHOTO_TYPE_OPTIONS.find(opt => opt.value === photo.note || (photo.note && photo.note.includes('Etiqueta') && opt.value.includes('Etiqueta')));
+                const selectedVal = matchingOption ? matchingOption.value : (photo.note || 'Progreso habitual');
 
                 return `
                   <div class="photo-card" id="photo-card-${photo.id}">
@@ -1672,9 +1679,20 @@ class HidroBalconApp {
                     <div class="photo-card-info">
                       <div>
                         <div class="photo-date">${dateStr}</div>
-                        ${photo.tag ? `<div class="tag tag-climate-control" style="font-size:0.65rem; margin-top:0.2rem; display:inline-block;">${photo.tag}</div>` : ''}
-                        ${isLabelTag ? `<div class="tag tag-photo-label" style="font-size:0.65rem; margin-top:0.2rem; display:inline-block;">🏷️ Etiqueta de la planta</div>` : ''}
-                        ${photo.note ? `<div class="photo-note-tag">${photo.note}</div>` : ''}
+                        ${photo.tag && !isLabelTag ? `<div class="tag tag-climate-control" style="font-size:0.65rem; margin-top:0.2rem; display:inline-block;">${photo.tag}</div>` : ''}
+                        ${isLabelTag ? `<div class="tag tag-photo-label" style="font-size:0.65rem; margin-top:0.2rem; display:inline-block;">🏷️ Etiqueta / Instrucciones</div>` : ''}
+                      </div>
+
+                      <div style="margin-top:0.35rem;">
+                        <label style="font-size:0.68rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">Tipo de foto:</label>
+                        <select class="form-select select-photo-type-existing" data-id="${photo.id}" style="font-size:0.72rem; padding:0.25rem 0.4rem; width:100%;">
+                          ${PHOTO_TYPE_OPTIONS.map(opt => `
+                            <option value="${opt.value}" ${opt.value === selectedVal ? 'selected' : ''}>
+                              ${opt.label}
+                            </option>
+                          `).join('')}
+                          ${!matchingOption && photo.note ? `<option value="${photo.note}" selected>${photo.note}</option>` : ''}
+                        </select>
                       </div>
 
                       <div class="photo-card-actions">
@@ -1741,7 +1759,7 @@ class HidroBalconApp {
       if (!pendingCompressed) return;
       const note = document.getElementById('select-photo-note')?.value || '';
       const isInitialChecked = document.getElementById('check-new-is-initial')?.checked || false;
-      const isLabel = note.includes('Etiqueta');
+      const isLabel = note.includes('Etiqueta') || note.includes('Instrucciones');
       saveBtn.disabled = true;
       saveBtn.innerText = 'Guardando...';
 
@@ -1751,7 +1769,7 @@ class HidroBalconApp {
         potId,
         dataUrl: pendingCompressed,
         note,
-        tag: isLabel ? 'Etiqueta' : '',
+        tag: isLabel ? 'Etiqueta/Instrucciones' : '',
         date: new Date().toISOString(),
         isCover: isFirst,
         isInitial: isFirst || isInitialChecked
@@ -1761,6 +1779,23 @@ class HidroBalconApp {
       await this.refreshData();
       this.render();
       this.openPhotosModal(potId);
+    });
+
+    // Modificar tipo de foto de fotos existentes
+    document.querySelectorAll('.select-photo-type-existing').forEach(select => {
+      select.addEventListener('change', async () => {
+        const photoId = select.dataset.id;
+        const newNote = select.value;
+        const isLabel = newNote.includes('Etiqueta') || newNote.includes('Instrucciones');
+        await photoDb.updatePhoto(photoId, {
+          note: newNote,
+          tag: isLabel ? 'Etiqueta/Instrucciones' : ''
+        });
+        this.showToast('Tipo de foto actualizado 🏷️', 'success');
+        await this.refreshData();
+        this.render();
+        this.openPhotosModal(potId);
+      });
     });
 
     document.querySelectorAll('.btn-make-cover').forEach(btn => {
@@ -2034,7 +2069,7 @@ class HidroBalconApp {
                     <div>
                       <strong style="color:#ffffff; font-size:0.95rem;">🪴 ${c.name}</strong>
                       <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">
-                        ${c.totalLiters} L totales • ${c.sections} secciones (~${perSectionLiters} L/sección) • ${c.material === 'terracotta' ? 'Barro' : 'Plástico'} • ${c.isCovered ? 'Techada' : 'Cielo Abierto'}
+                        ${c.totalLiters} L totales • ${c.sections} secciones (~${perSectionLiters} L/sección) • ${c.material === 'terracotta' ? 'Barro' : 'Plástico'} • ${c.isCovered ? 'Techada' : 'Cielo Abierto'}${c.dimensions ? ` • 📏 ${c.dimensions.length}×${c.dimensions.width}×${c.dimensions.depth} cm` : ''}
                       </div>
                     </div>
                     <div style="display:flex; gap:0.4rem;">
@@ -2070,10 +2105,36 @@ class HidroBalconApp {
                 <input type="text" id="input-container-name" class="form-input" required placeholder="Ej: Jardinera Corrida Balcón Este (80cm)" />
               </div>
 
+              <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-sm); padding:0.65rem; display:flex; flex-direction:column; gap:0.5rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:0.75rem; font-weight:700; color:#ffffff;">📏 Dimensiones de la Jardinera (cm):</span>
+                  <span id="dimensions-calc-badge" style="font-size:0.72rem; color:#34d399; font-weight:700; background:rgba(16,185,129,0.15); padding:0.15rem 0.5rem; border-radius:var(--radius-full); border:1px solid rgba(16,185,129,0.3);">
+                    📐 Calculado: ~40 L
+                  </span>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem;">
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="input-dim-length" style="font-size:0.7rem;">Largo (cm):</label>
+                    <input type="number" id="input-dim-length" class="form-input" min="10" max="300" placeholder="Ej: 80" value="80" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                  </div>
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="input-dim-width" style="font-size:0.7rem;">Ancho (cm):</label>
+                    <input type="number" id="input-dim-width" class="form-input" min="10" max="150" placeholder="Ej: 25" value="25" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                  </div>
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="input-dim-depth" style="font-size:0.7rem;">Profundidad (cm):</label>
+                    <input type="number" id="input-dim-depth" class="form-input" min="10" max="150" placeholder="Ej: 20" value="20" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                  </div>
+                </div>
+                <span style="font-size:0.68rem; color:var(--text-muted); line-height:1.2;">
+                  💡 El volumen se calcula como (Largo × Ancho × Profundidad) / 1000. Puedes ajustar los litros resultantes manualmente si tiene forma cónica o fondo irregular.
+                </span>
+              </div>
+
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
                 <div class="form-group">
                   <label class="form-label" for="input-container-liters">Volumen Total (Litros):</label>
-                  <input type="number" id="input-container-liters" class="form-input" required min="10" max="250" value="40" />
+                  <input type="number" id="input-container-liters" class="form-input" required min="5" max="500" step="0.5" value="40" />
                 </div>
                 <div class="form-group">
                   <label class="form-label" for="input-container-sections">Número de Secciones / Plantas:</label>
@@ -2120,9 +2181,34 @@ class HidroBalconApp {
     document.getElementById('btn-close-containers-modal')?.addEventListener('click', () => { container.innerHTML = ''; });
     document.getElementById('btn-close-containers-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
 
+    // Cálculo automático de litros en vivo según dimensiones
+    const dimL = document.getElementById('input-dim-length');
+    const dimW = document.getElementById('input-dim-width');
+    const dimD = document.getElementById('input-dim-depth');
+    const litersInput = document.getElementById('input-container-liters');
+    const badge = document.getElementById('dimensions-calc-badge');
+
+    const updateCalculatedLiters = () => {
+      const l = parseFloat(dimL?.value || 0);
+      const w = parseFloat(dimW?.value || 0);
+      const d = parseFloat(dimD?.value || 0);
+      if (l > 0 && w > 0 && d > 0) {
+        const calculatedLiters = Math.round(((l * w * d) / 1000) * 10) / 10;
+        if (litersInput) litersInput.value = calculatedLiters;
+        if (badge) badge.innerText = `📐 Calculado: ~${calculatedLiters} L`;
+      }
+    };
+
+    dimL?.addEventListener('input', updateCalculatedLiters);
+    dimW?.addEventListener('input', updateCalculatedLiters);
+    dimD?.addEventListener('input', updateCalculatedLiters);
+
     document.getElementById('new-container-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = document.getElementById('input-container-name').value.trim();
+      const length = parseFloat(document.getElementById('input-dim-length')?.value || 0) || null;
+      const width = parseFloat(document.getElementById('input-dim-width')?.value || 0) || null;
+      const depth = parseFloat(document.getElementById('input-dim-depth')?.value || 0) || null;
       const totalLiters = parseFloat(document.getElementById('input-container-liters').value || '40');
       const sections = parseInt(document.getElementById('input-container-sections').value || '3', 10);
       const material = document.getElementById('select-container-material').value;
@@ -2131,6 +2217,7 @@ class HidroBalconApp {
 
       db.addContainer({
         name,
+        dimensions: (length && width && depth) ? { length, width, depth } : null,
         totalLiters,
         sections,
         material,

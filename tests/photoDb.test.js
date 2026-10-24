@@ -10,6 +10,7 @@ describe('Gestor de Fotos e Historial de Evolución (IndexedDB)', () => {
     expect(typeof pDb.getInitialPhoto).toBe('function');
     expect(typeof pDb.setInitialPhoto).toBe('function');
     expect(typeof pDb.setCoverPhoto).toBe('function');
+    expect(typeof pDb.updatePhoto).toBe('function');
     expect(typeof pDb.compressImage).toBe('function');
   });
 
@@ -21,5 +22,8 @@ describe('Gestor de Fotos e Historial de Evolución (IndexedDB)', () => {
 
     const initial = await pDb.getInitialPhoto('pot-test-1');
     expect(initial).toBeNull();
+
+    const updateRes = await pDb.updatePhoto('fake-id', { note: 'test' });
+    expect(updateRes).toBe(false);
   });
 });
