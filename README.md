@@ -31,9 +31,15 @@ Aplicación web progresiva (**PWA**) y móvil para el **cálculo agronómico de 
 ### 📸 4. Álbum de Fotos & Evolución Botánica
 * Captura directa desde la cámara del móvil.
 * **Compresión en cliente a WebP** (~50 KB) con persistencia offline en **IndexedDB**.
-* Línea temporal de hitos botánicos ("Primer fruto", "Floración", "Trasplante") y comparador visual "Antes vs Hoy".
+* **Gestión de Portada y Foto Inicial:** Elección de cualquier foto como portada del balcón y fijación de foto inicial para la comparativa "Antes vs Hoy".
+* **Sección de Etiquetas Botánicas:** Categorización y badges para fotos de etiquetas comerciales o fichas botánicas de plantas.
+* **Edición Rápida de Nombre:** Renombrado directo con un toque en cualquier maceta ya creada.
 
-### 📱 5. PWA & Preparado para APK Android
+### 🪴 5. Jardineras Corridas Compartidas & Retroalimentación de Riego
+* **Contenedores Padre (Jardineras Corridas):** Gestión de jardineras grandes (>25L, barro o plástico) que alojan varias plantas botánicas en sus compartimentos o secciones. Las plantas heredan la inercia térmica y el sustrato se prorratea para un cálculo de secado y dosis mucho más preciso.
+* **Modal de Confirmación & Ajuste de Riego:** Posibilidad de regular los vasos vertidos reales (50%, 75%, 100%, 125% o con selector continuo). Si decides regar menos, el motor Go Wasm recibe la retroalimentación y calibra automáticamente el factor de retención hídrica.
+
+### 📱 6. PWA & Preparado para APK Android
 * Soporte offline completo con **Service Worker**.
 * Totalmente adaptativo (**Mobile-First**) con diseño optimizado para pantallas táctiles y notch/safe-areas (`viewport-fit=cover`).
 * Configuración con **Capacitor** en `capacitor.config.json` y guía completa en `docs/APK_INSTRUCTIONS.md`.

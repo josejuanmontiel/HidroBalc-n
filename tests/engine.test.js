@@ -158,4 +158,45 @@ describe('Motor de Riego Agronómico para Terraza y Macetas', () => {
     expect(res.status).toBe('urgent');
     expect(res.alertBadge?.type).toBe('urgent');
   });
+
+  it('hereda la inercia térmica y propiedades de la jardinera corrida padre', () => {
+    const individualSmallPot = {
+      id: 'pot-solo',
+      name: 'Tomatito individual',
+      plantType: 'vegetable',
+      material: 'plastic',
+      size: 'small',
+      sunExposure: 'full_sun',
+      isCovered: false,
+      lastWatered: '2026-05-14T10:00:00Z' // 1 día
+    };
+
+    const planterPlant = {
+      id: 'pot-in-planter',
+      name: 'Tomatito en jardinera compartida',
+      plantType: 'vegetable',
+      material: 'plastic',
+      size: 'small',
+      sunExposure: 'full_sun',
+      isCovered: false,
+      lastWatered: '2026-05-14T10:00:00Z',
+      container: {
+        id: 'container-1',
+        name: 'Jardinera Corrida 50L',
+        totalLiters: 50,
+        sections: 2, // 25L por sección
+        material: 'plastic',
+        sunExposure: 'full_sun',
+        isCovered: false
+      }
+    };
+
+    const resSolo = calculatePotWatering(individualSmallPot, baseWeather, now);
+    const resPlanter = calculatePotWatering(planterPlant, baseWeather, now);
+
+    // El intervalo efectivo es mayor en la jardinera corrida (se seca más despacio)
+    expect(resPlanter.effectiveIntervalDays).toBeGreaterThan(resSolo.effectiveIntervalDays);
+    // La planta en jardinera retiene significativamente más humedad debido al volumen compartido
+    expect(resPlanter.soilMoisturePercent).toBeGreaterThan(resSolo.soilMoisturePercent);
+  });
 });

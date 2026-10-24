@@ -92,7 +92,7 @@ export class PhotoDatabase {
   /**
    * Guarda una foto para una maceta
    */
-  async addPhoto({ potId, dataUrl, note = '', date = new Date().toISOString(), isCover = false }) {
+  async addPhoto({ potId, dataUrl, note = '', tag = '', date = new Date().toISOString(), isCover = false, isInitial = false }) {
     const db = await this.dbPromise;
     if (!db) return null;
 
@@ -101,23 +101,33 @@ export class PhotoDatabase {
       potId,
       dataUrl,
       note,
+      tag,
       date,
-      isCover: Boolean(isCover)
+      isCover: Boolean(isCover),
+      isInitial: Boolean(isInitial)
     };
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
 
-      if (isCover) {
-        // Quitar isCover de las demás fotos de esta misma maceta
+      if (isCover || isInitial) {
         const index = store.index('potId');
         const req = index.openCursor(IDBKeyRange.only(potId));
         req.onsuccess = (e) => {
           const cursor = e.target.result;
           if (cursor) {
-            if (cursor.value.isCover) {
-              const updated = { ...cursor.value, isCover: false };
+            let needsUpdate = false;
+            let updated = { ...cursor.value };
+            if (isCover && cursor.value.isCover) {
+              updated.isCover = false;
+              needsUpdate = true;
+            }
+            if (isInitial && cursor.value.isInitial) {
+              updated.isInitial = false;
+              needsUpdate = true;
+            }
+            if (needsUpdate) {
               cursor.update(updated);
             }
             cursor.continue();
@@ -181,6 +191,16 @@ export class PhotoDatabase {
   }
 
   /**
+   * Obtiene la foto inicial de la maceta (o la más antigua si ninguna tiene isInitial: true)
+   */
+  async getInitialPhoto(potId) {
+    const photos = await this.getPhotosByPot(potId);
+    if (photos.length === 0) return null;
+    const explicitInitial = photos.find(p => p.isInitial);
+    return explicitInitial || photos[photos.length - 1];
+  }
+
+  /**
    * Marca una foto como portada de la maceta
    */
   async setCoverPhoto(potId, photoId) {
@@ -198,6 +218,34 @@ export class PhotoDatabase {
         if (cursor) {
           const isTarget = cursor.value.id === photoId;
           const updated = { ...cursor.value, isCover: isTarget };
+          cursor.update(updated);
+          cursor.continue();
+        }
+      };
+
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /**
+   * Marca una foto como la foto inicial de referencia de la planta
+   */
+  async setInitialPhoto(potId, photoId) {
+    const db = await this.dbPromise;
+    if (!db) return false;
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const index = store.index('potId');
+      const req = index.openCursor(IDBKeyRange.only(potId));
+
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          const isTarget = cursor.value.id === photoId;
+          const updated = { ...cursor.value, isInitial: isTarget };
           cursor.update(updated);
           cursor.continue();
         }

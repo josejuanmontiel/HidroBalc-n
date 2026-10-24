@@ -15,6 +15,7 @@ class BackupService {
    */
   async exportFullBackup() {
     const pots = db.getPots();
+    const containers = db.getContainers();
     const logs = db.getLogs();
 
     // Recopilar todas las fotos de todas las macetas de IndexedDB
@@ -29,11 +30,12 @@ class BackupService {
     }
 
     const backupData = {
-      version: '1.2.0',
+      version: '1.3.0',
       exportedAt: new Date().toISOString(),
       appName: 'HidroBalcón PWA',
       data: {
         pots,
+        containers,
         logs,
         photos: allPhotos
       }
@@ -74,10 +76,15 @@ class BackupService {
             throw new Error('El archivo no tiene el formato de copia de seguridad de HidroBalcón.');
           }
 
-          const { pots, logs, photos } = content.data;
+          const { pots, containers, logs, photos } = content.data;
 
           // 1. Restaurar macetas
           db.savePots(pots || []);
+
+          // 1.1 Restaurar jardineras / contenedores padre
+          if (containers && Array.isArray(containers)) {
+            db.saveContainers(containers);
+          }
 
           // 2. Restaurar historial
           if (logs && Array.isArray(logs)) {
@@ -93,8 +100,10 @@ class BackupService {
                   potId: ph.potId,
                   dataUrl: ph.dataUrl,
                   note: ph.note || '',
+                  tag: ph.tag || '',
                   date: ph.date || new Date().toISOString(),
-                  isCover: Boolean(ph.isCover)
+                  isCover: Boolean(ph.isCover),
+                  isInitial: Boolean(ph.isInitial)
                 });
                 restoredPhotos++;
               } catch (err) {

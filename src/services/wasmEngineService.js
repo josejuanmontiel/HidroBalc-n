@@ -72,14 +72,24 @@ class WasmEngineService {
 
     if (this.isReady && window.HidroBalconWasm && window.HidroBalconWasm.calculateDose) {
       try {
+        let effectiveSize = pot.size;
+        if (pot.container) {
+          const sections = Math.max(1, pot.container.sections || 1);
+          const liters = (pot.container.totalLiters || 32) / sections;
+          if (liters <= 3) effectiveSize = 'small';
+          else if (liters <= 10) effectiveSize = 'medium';
+          else if (liters <= 25) effectiveSize = 'large';
+          else effectiveSize = 'planter';
+        }
+
         const potJson = JSON.stringify({
           id: pot.id,
           name: pot.name,
           plantType: pot.plantType,
-          material: pot.material,
-          size: pot.size,
-          sunExposure: pot.sunExposure,
-          isCovered: Boolean(pot.isCovered),
+          material: pot.container ? pot.container.material : pot.material,
+          size: effectiveSize,
+          sunExposure: pot.container ? pot.container.sunExposure : pot.sunExposure,
+          isCovered: pot.container ? Boolean(pot.container.isCovered) : Boolean(pot.isCovered),
           learnedDryingFactor: pot.learnedDryingFactor || 1.0,
           calibratedDoseMl: pot.calibratedDoseMl || 0,
           calibrationCount: pot.calibrationCount || 0
@@ -117,14 +127,24 @@ class WasmEngineService {
 
     if (this.isReady && window.HidroBalconWasm && window.HidroBalconWasm.calibrateModel) {
       try {
+        let effectiveSize = pot.size;
+        if (pot.container) {
+          const sections = Math.max(1, pot.container.sections || 1);
+          const liters = (pot.container.totalLiters || 32) / sections;
+          if (liters <= 3) effectiveSize = 'small';
+          else if (liters <= 10) effectiveSize = 'medium';
+          else if (liters <= 25) effectiveSize = 'large';
+          else effectiveSize = 'planter';
+        }
+
         const potJson = JSON.stringify({
           id: pot.id,
           name: pot.name,
           plantType: pot.plantType,
-          material: pot.material,
-          size: pot.size,
-          sunExposure: pot.sunExposure,
-          isCovered: Boolean(pot.isCovered),
+          material: pot.container ? pot.container.material : pot.material,
+          size: effectiveSize,
+          sunExposure: pot.container ? pot.container.sunExposure : pot.sunExposure,
+          isCovered: pot.container ? Boolean(pot.container.isCovered) : Boolean(pot.isCovered),
           learnedDryingFactor: pot.learnedDryingFactor || 1.0,
           calibratedDoseMl: pot.calibratedDoseMl || 0,
           calibrationCount: pot.calibrationCount || 0
@@ -154,16 +174,22 @@ class WasmEngineService {
   // Fallbacks JavaScript en caso de que Wasm esté inicializándose o en Node
   calculateDoseFallback(pot, weather) {
     let substrateLiters = 5.0;
-    if (pot.size === 'small') substrateLiters = 1.8;
-    else if (pot.size === 'medium') substrateLiters = 5.5;
-    else if (pot.size === 'large') substrateLiters = 16.0;
-    else if (pot.size === 'planter') substrateLiters = 32.0;
+    if (pot.container) {
+      const sections = Math.max(1, pot.container.sections || 1);
+      substrateLiters = (pot.container.totalLiters || 32.0) / sections;
+    } else {
+      if (pot.size === 'small') substrateLiters = 1.8;
+      else if (pot.size === 'medium') substrateLiters = 5.5;
+      else if (pot.size === 'large') substrateLiters = 16.0;
+      else if (pot.size === 'planter') substrateLiters = 32.0;
+    }
 
     let ratio = 0.18;
     if (pot.plantType === 'vegetable') ratio = 0.24;
     else if (pot.plantType === 'succulent_cactus') ratio = 0.08;
 
-    let mat = pot.material === 'terracotta' ? 1.25 : 1.0;
+    const rawMat = pot.container ? pot.container.material : pot.material;
+    let mat = rawMat === 'terracotta' ? 1.25 : 1.0;
     let heat = (weather?.maxTemp ?? 25) > 32 ? 1.2 : 1.0;
     let factor = pot.learnedDryingFactor || 1.0;
 

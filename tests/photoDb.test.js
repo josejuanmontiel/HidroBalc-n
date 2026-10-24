@@ -7,6 +7,9 @@ describe('Gestor de Fotos e Historial de Evolución (IndexedDB)', () => {
     expect(pDb).toBeDefined();
     expect(typeof pDb.addPhoto).toBe('function');
     expect(typeof pDb.getPhotosByPot).toBe('function');
+    expect(typeof pDb.getInitialPhoto).toBe('function');
+    expect(typeof pDb.setInitialPhoto).toBe('function');
+    expect(typeof pDb.setCoverPhoto).toBe('function');
     expect(typeof pDb.compressImage).toBe('function');
   });
 
@@ -15,5 +18,8 @@ describe('Gestor de Fotos e Historial de Evolución (IndexedDB)', () => {
     const photos = await pDb.getPhotosByPot('pot-test-1');
     expect(Array.isArray(photos)).toBe(true);
     expect(photos.length).toBe(0);
+
+    const initial = await pDb.getInitialPhoto('pot-test-1');
+    expect(initial).toBeNull();
   });
 });

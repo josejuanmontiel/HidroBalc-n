@@ -303,13 +303,13 @@ body {
   margin-bottom: 1.5rem;
   box-shadow: var(--shadow-card);
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.25rem;
 }
 
 @media (min-width: 850px) {
   .weather-card {
-    grid-template-columns: 320px 1fr;
+    grid-template-columns: 320px minmax(0, 1fr);
   }
 }
 
@@ -398,6 +398,7 @@ body {
   flex-direction: column;
   justify-content: center;
   gap: 0.85rem;
+  min-width: 0;
 }
 
 .alert-banner {
@@ -461,35 +462,56 @@ body {
   display: flex;
   gap: 0.5rem;
   overflow-x: auto;
-  padding-top: 0.5rem;
+  padding: 0.5rem 0.1rem 0.25rem 0.1rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.forecast-strip::-webkit-scrollbar {
+  height: 4px;
+}
+
+.forecast-strip::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
 }
 
 .forecast-pill {
-  flex: 1;
-  min-width: 65px;
+  flex: 1 1 0;
+  min-width: 58px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  padding: 0.4rem 0.3rem;
+  padding: 0.45rem 0.25rem;
   text-align: center;
   font-size: 0.72rem;
+  transition: all 0.2s ease;
+}
+
+.forecast-pill:hover {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .forecast-day {
   color: var(--text-subtle);
   text-transform: uppercase;
   font-weight: 700;
+  font-size: 0.68rem;
 }
 
 .forecast-temp {
   font-weight: 700;
   color: var(--text-main);
-  margin: 0.15rem 0;
+  margin: 0.2rem 0;
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 
 .forecast-rain {
   color: #38bdf8;
   font-size: 0.68rem;
+  white-space: nowrap;
 }
 
 /* ==========================================================================
@@ -557,19 +579,19 @@ body {
 /* Pots Grid */
 .pots-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.25rem;
 }
 
 @media (min-width: 680px) {
   .pots-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 1024px) {
   .pots-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1052,19 +1074,19 @@ body {
 
 .agenda-days-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.85rem;
 }
 
 @media (min-width: 640px) {
   .agenda-days-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (min-width: 960px) {
   .agenda-days-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -2169,5 +2191,277 @@ body {
   border: 1px solid rgba(2, 132, 199, 0.4);
 }
 
+/* Quick Name Edit */
+.pot-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
 
+.btn-quick-rename {
+  background: transparent;
+  border: none;
+  font-size: 0.75rem;
+  cursor: pointer;
+  opacity: 0.4;
+  padding: 0.15rem;
+  border-radius: var(--radius-sm);
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.pot-header:hover .btn-quick-rename,
+.task-title-row:hover .btn-quick-rename {
+  opacity: 0.9;
+}
+
+.btn-quick-rename:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tag-container-parent {
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+}
+
+/* Initial Photo Badges & Buttons */
+.photo-card-initial-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: #3b82f6;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-full);
+}
+
+.tag-photo-label {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+/* Water Confirmation & Feedback Modal */
+.dose-adjust-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.dose-stepper-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-size: 1.25rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dose-stepper-btn:hover {
+  background: rgba(59, 130, 246, 0.25);
+  border-color: #3b82f6;
+}
+
+.dose-display-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 140px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.dose-glasses-val {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #38bdf8;
+}
+
+.dose-ml-val {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.dose-quick-preset-row {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.btn-preset-dose {
+  font-size: 0.7rem;
+  padding: 0.25rem 0.55rem;
+}
+
+/* Container Manager Cards */
+.container-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.container-card:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.container-plants-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+/* ==========================================================================
+   MOBILE RESPONSIVENESS ENHANCEMENTS (< 520px)
+   ========================================================================== */
+@media (max-width: 520px) {
+  .app-container {
+    padding: 0.85rem 0.65rem;
+  }
+
+  .main-header {
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+  }
+
+  .brand-logo-img {
+    width: 38px;
+    height: 38px;
+    flex-shrink: 0;
+  }
+
+  .brand-info h1 {
+    font-size: 1.25rem;
+    flex-wrap: wrap;
+  }
+
+  .brand-info p {
+    font-size: 0.75rem;
+  }
+
+  .header-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.4rem;
+  }
+
+  .header-actions .btn {
+    font-size: 0.75rem;
+    padding: 0.45rem 0.5rem;
+    justify-content: center;
+  }
+
+  .weather-card {
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .weather-snapshot {
+    padding-bottom: 0.75rem;
+    gap: 0.65rem;
+  }
+
+  .temp-number {
+    font-size: 2.25rem;
+  }
+
+  .stat-item {
+    font-size: 0.72rem;
+    padding: 0.25rem 0.45rem;
+  }
+
+  .alert-banner {
+    padding: 0.85rem;
+    gap: 0.65rem;
+  }
+
+  .climate-alert-cta-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .btn-climate-control-cta {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .forecast-strip {
+    gap: 0.35rem;
+  }
+
+  .forecast-pill {
+    min-width: 52px;
+    padding: 0.35rem 0.2rem;
+    font-size: 0.68rem;
+  }
+
+  .pot-card {
+    padding: 1rem;
+    gap: 0.75rem;
+  }
+
+  .pot-actions .btn {
+    font-size: 0.68rem;
+    padding: 0.35rem 0.4rem;
+  }
+
+  .task-actions-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
+  }
+
+  .task-tools-group {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .btn-task-water-single {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+  }
+
+  .modal-content {
+    padding: 1.1rem;
+    gap: 0.85rem;
+    max-height: 92vh;
+  }
+
+  .dose-adjust-group {
+    gap: 0.4rem;
+  }
+
+  .dose-display-badge {
+    min-width: 110px;
+    padding: 0.4rem 0.75rem;
+  }
+
+  .dose-glasses-val {
+    font-size: 1.35rem;
+  }
+}
 

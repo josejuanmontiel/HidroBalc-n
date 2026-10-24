@@ -54,4 +54,22 @@ describe('Motor Go Wasm & Sistema de Copia de Seguridad', () => {
     expect(typeof backupService.exportFullBackup).toBe('function');
     expect(typeof backupService.importBackup).toBe('function');
   });
+
+  it('calcula la dosis proporcional cuando la planta está asignada a una jardinera corrida', async () => {
+    const potWithContainer = {
+      ...mockPot,
+      container: {
+        id: 'container-test',
+        name: 'Jardinera 60L',
+        totalLiters: 60,
+        sections: 3, // 20L efectivos por sección
+        material: 'terracotta'
+      }
+    };
+
+    const dose = await wasmEngineService.calculateDose(potWithContainer, mockWeather);
+    // Con 20L efectivos de terracota frente a maceta mediana, la dosis debe ser robusta (>800ml)
+    expect(dose.doseMl).toBeGreaterThan(800);
+    expect(dose.doseGlasses).toBeGreaterThanOrEqual(3.0);
+  });
 });

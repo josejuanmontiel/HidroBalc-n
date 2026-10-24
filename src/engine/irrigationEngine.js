@@ -220,10 +220,27 @@ export function calculatePotWatering(pot, weather, now = new Date()) {
   const daysSince = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
 
   const plant = PLANT_TYPES[pot.plantType] || PLANT_TYPES.foliage;
-  const material = POT_MATERIALS[pot.material] || POT_MATERIALS.terracotta;
+  const rawMaterial = pot.container ? pot.container.material : pot.material;
+  const material = POT_MATERIALS[rawMaterial] || POT_MATERIALS.terracotta;
   const size = POT_SIZES[pot.size] || POT_SIZES.medium;
-  const sun = SUN_EXPOSURES[pot.sunExposure] || SUN_EXPOSURES.partial_sun;
-  const isCovered = Boolean(pot.isCovered); // Balcón techado
+  const rawSun = pot.container ? pot.container.sunExposure : pot.sunExposure;
+  const sun = SUN_EXPOSURES[rawSun] || SUN_EXPOSURES.partial_sun;
+  const isCovered = pot.container ? Boolean(pot.container.isCovered) : Boolean(pot.isCovered); // Balcón techado
+
+  // Multiplicador de secado por contenedor: si está en jardinera corrida, aprovecha la inercia térmica
+  let sizeMultiplier = size.dryingMultiplier;
+  if (pot.container) {
+    // Si la jardinera tiene varias secciones/plantas, el sustrato se divide
+    const sections = Math.max(1, pot.container.sections || 1);
+    const effectiveSectionLiters = (pot.container.totalLiters || 32) / sections;
+    if (effectiveSectionLiters >= 20) {
+      sizeMultiplier = 0.70;
+    } else if (effectiveSectionLiters >= 10) {
+      sizeMultiplier = 0.85;
+    } else {
+      sizeMultiplier = 1.05;
+    }
+  }
 
   const risks = analyzeWeatherRisks(weather);
   const envFactor = calculateEnvironmentalEvaporation(weather);
@@ -233,7 +250,7 @@ export function calculatePotWatering(pot, weather, now = new Date()) {
   const compositeDryingRate = (
     plant.waterDemandFactor *
     material.dryingMultiplier *
-    size.dryingMultiplier *
+    sizeMultiplier *
     sun.dryingMultiplier *
     envFactor
   );

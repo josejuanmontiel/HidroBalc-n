@@ -5,9 +5,23 @@
 
 const STORAGE_KEYS = {
   POTS: 'riego_balcon_pots',
+  CONTAINERS: 'riego_balcon_containers',
   LOGS: 'riego_balcon_history',
   SETTINGS: 'riego_balcon_settings'
 };
+
+const DEFAULT_CONTAINERS = [
+  {
+    id: 'container-jardinera-principal',
+    name: 'Jardinera Corrida Balcón Sur',
+    material: 'terracotta',
+    totalLiters: 40,
+    sections: 3,
+    sunExposure: 'full_sun',
+    isCovered: true,
+    notes: 'Jardinera rectangular de barro cocido con 3 compartimentos para aromáticas y flores.'
+  }
+];
 
 const DEFAULT_POTS = [
   {
@@ -81,6 +95,9 @@ export class Database {
     if (typeof localStorage !== 'undefined' && localStorage.getItem) {
       if (!localStorage.getItem(STORAGE_KEYS.POTS)) {
         this.savePots(DEFAULT_POTS);
+      }
+      if (!localStorage.getItem(STORAGE_KEYS.CONTAINERS)) {
+        this.saveContainers(DEFAULT_CONTAINERS);
       }
     }
   }
@@ -190,6 +207,76 @@ export class Database {
     return pots;
   }
 
+  // ================= CONTENEDORES / JARDINERAS PADRE ================= //
+
+  getContainers() {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem) {
+        const data = localStorage.getItem(STORAGE_KEYS.CONTAINERS);
+        return data ? JSON.parse(data) : DEFAULT_CONTAINERS;
+      }
+      return DEFAULT_CONTAINERS;
+    } catch {
+      return DEFAULT_CONTAINERS;
+    }
+  }
+
+  saveContainers(containers) {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.setItem) {
+        localStorage.setItem(STORAGE_KEYS.CONTAINERS, JSON.stringify(containers));
+      }
+    } catch (e) {
+      console.error('Error saving containers:', e);
+    }
+  }
+
+  getContainer(id) {
+    const containers = this.getContainers();
+    return containers.find(c => c.id === id);
+  }
+
+  addContainer(container) {
+    const containers = this.getContainers();
+    const newContainer = {
+      ...container,
+      id: container.id || `container-${Date.now()}`,
+      createdAt: new Date().toISOString()
+    };
+    containers.push(newContainer);
+    this.saveContainers(containers);
+    return newContainer;
+  }
+
+  updateContainer(id, updates) {
+    const containers = this.getContainers();
+    const index = containers.findIndex(c => c.id === id);
+    if (index !== -1) {
+      containers[index] = { ...containers[index], ...updates };
+      this.saveContainers(containers);
+      return containers[index];
+    }
+    return null;
+  }
+
+  deleteContainer(id) {
+    const containers = this.getContainers().filter(c => c.id !== id);
+    this.saveContainers(containers);
+    // Desvincular macetas que estuvieran en este contenedor
+    const pots = this.getPots();
+    let modified = false;
+    pots.forEach(p => {
+      if (p.containerId === id) {
+        p.containerId = null;
+        modified = true;
+      }
+    });
+    if (modified) {
+      this.savePots(pots);
+    }
+    return containers;
+  }
+
   getLogs() {
     try {
       const data = localStorage.getItem(STORAGE_KEYS.LOGS);
@@ -209,6 +296,7 @@ export class Database {
 
   resetToDefaults() {
     this.savePots(DEFAULT_POTS);
+    this.saveContainers(DEFAULT_CONTAINERS);
     localStorage.removeItem(STORAGE_KEYS.LOGS);
     return DEFAULT_POTS;
   }
