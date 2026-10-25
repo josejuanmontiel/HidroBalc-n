@@ -6,9 +6,29 @@
 const STORAGE_KEYS = {
   POTS: 'riego_balcon_pots',
   CONTAINERS: 'riego_balcon_containers',
+  ZONES: 'riego_balcon_zones',
   LOGS: 'riego_balcon_history',
   SETTINGS: 'riego_balcon_settings'
 };
+
+const DEFAULT_ZONES = [
+  {
+    id: 'zone-terraza-sur',
+    name: 'Barandilla Principal (Sur - Pleno Sol)',
+    orientation: 'south',
+    shadow: 'none',
+    isCovered: false,
+    notes: 'Zona abierta con máximo sol directo durante todo el día.'
+  },
+  {
+    id: 'zone-rincon-este',
+    name: 'Rincón de Entrada (Este - Semisombra)',
+    orientation: 'east',
+    shadow: 'partial_building',
+    isCovered: true,
+    notes: 'Protegida bajo el techo con sol suave de mañana y sombra por el edificio lateral.'
+  }
+];
 
 const DEFAULT_CONTAINERS = [
   {
@@ -19,6 +39,7 @@ const DEFAULT_CONTAINERS = [
     sections: 3,
     sunExposure: 'full_sun',
     isCovered: true,
+    zoneId: 'zone-terraza-sur',
     notes: 'Jardinera rectangular de barro cocido con 3 compartimentos para aromáticas y flores.'
   }
 ];
@@ -88,27 +109,59 @@ const DEFAULT_POTS = [
 
 export class Database {
   constructor() {
+    this._memStorage = {};
     this.init();
   }
 
+  _getItem(key) {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem) {
+        return localStorage.getItem(key);
+      }
+    } catch {
+      // ignore
+    }
+    return this._memStorage[key] || null;
+  }
+
+  _setItem(key, value) {
+    this._memStorage[key] = value;
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.setItem) {
+        localStorage.setItem(key, value);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  _removeItem(key) {
+    delete this._memStorage[key];
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.removeItem) {
+        localStorage.removeItem(key);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   init() {
-    if (typeof localStorage !== 'undefined' && localStorage.getItem) {
-      if (!localStorage.getItem(STORAGE_KEYS.POTS)) {
-        this.savePots(DEFAULT_POTS);
-      }
-      if (!localStorage.getItem(STORAGE_KEYS.CONTAINERS)) {
-        this.saveContainers(DEFAULT_CONTAINERS);
-      }
+    if (!this._getItem(STORAGE_KEYS.POTS)) {
+      this.savePots(DEFAULT_POTS);
+    }
+    if (!this._getItem(STORAGE_KEYS.CONTAINERS)) {
+      this.saveContainers(DEFAULT_CONTAINERS);
+    }
+    if (!this._getItem(STORAGE_KEYS.ZONES)) {
+      this.saveZones(DEFAULT_ZONES);
     }
   }
 
   getPots() {
     try {
-      if (typeof localStorage !== 'undefined' && localStorage.getItem) {
-        const data = localStorage.getItem(STORAGE_KEYS.POTS);
-        return data ? JSON.parse(data) : DEFAULT_POTS;
-      }
-      return DEFAULT_POTS;
+      const data = this._getItem(STORAGE_KEYS.POTS);
+      return data ? JSON.parse(data) : DEFAULT_POTS;
     } catch {
       return DEFAULT_POTS;
     }
@@ -116,9 +169,7 @@ export class Database {
 
   savePots(pots) {
     try {
-      if (typeof localStorage !== 'undefined' && localStorage.setItem) {
-        localStorage.setItem(STORAGE_KEYS.POTS, JSON.stringify(pots));
-      }
+      this._setItem(STORAGE_KEYS.POTS, JSON.stringify(pots));
     } catch (e) {
       console.error('Error saving pots:', e);
     }
@@ -133,7 +184,7 @@ export class Database {
     const pots = this.getPots();
     const newPot = {
       ...pot,
-      id: pot.id || `pot-${Date.now()}`,
+      id: pot.id || `pot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       createdAt: new Date().toISOString(),
       lastWatered: pot.lastWatered || new Date().toISOString()
     };
@@ -211,11 +262,8 @@ export class Database {
 
   getContainers() {
     try {
-      if (typeof localStorage !== 'undefined' && localStorage.getItem) {
-        const data = localStorage.getItem(STORAGE_KEYS.CONTAINERS);
-        return data ? JSON.parse(data) : DEFAULT_CONTAINERS;
-      }
-      return DEFAULT_CONTAINERS;
+      const data = this._getItem(STORAGE_KEYS.CONTAINERS);
+      return data ? JSON.parse(data) : DEFAULT_CONTAINERS;
     } catch {
       return DEFAULT_CONTAINERS;
     }
@@ -223,9 +271,7 @@ export class Database {
 
   saveContainers(containers) {
     try {
-      if (typeof localStorage !== 'undefined' && localStorage.setItem) {
-        localStorage.setItem(STORAGE_KEYS.CONTAINERS, JSON.stringify(containers));
-      }
+      this._setItem(STORAGE_KEYS.CONTAINERS, JSON.stringify(containers));
     } catch (e) {
       console.error('Error saving containers:', e);
     }
@@ -240,7 +286,7 @@ export class Database {
     const containers = this.getContainers();
     const newContainer = {
       ...container,
-      id: container.id || `container-${Date.now()}`,
+      id: container.id || `container-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       createdAt: new Date().toISOString()
     };
     containers.push(newContainer);
@@ -277,9 +323,83 @@ export class Database {
     return containers;
   }
 
+  // ================= ZONAS DE LA TERRAZA / BALCÓN ("CONTENEDOR DE CONTENEDORES") ================= //
+
+  getZones() {
+    try {
+      const data = this._getItem(STORAGE_KEYS.ZONES);
+      return data ? JSON.parse(data) : DEFAULT_ZONES;
+    } catch {
+      return DEFAULT_ZONES;
+    }
+  }
+
+  saveZones(zones) {
+    try {
+      this._setItem(STORAGE_KEYS.ZONES, JSON.stringify(zones));
+    } catch (e) {
+      console.error('Error saving zones:', e);
+    }
+  }
+
+  getZone(id) {
+    const zones = this.getZones();
+    return zones.find(z => z.id === id);
+  }
+
+  addZone(zone) {
+    const zones = this.getZones();
+    const newZone = {
+      ...zone,
+      id: zone.id || `zone-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      createdAt: new Date().toISOString()
+    };
+    zones.push(newZone);
+    this.saveZones(zones);
+    return newZone;
+  }
+
+  updateZone(id, updates) {
+    const zones = this.getZones();
+    const index = zones.findIndex(z => z.id === id);
+    if (index !== -1) {
+      zones[index] = { ...zones[index], ...updates };
+      this.saveZones(zones);
+      return zones[index];
+    }
+    return null;
+  }
+
+  deleteZone(id) {
+    const zones = this.getZones().filter(z => z.id !== id);
+    this.saveZones(zones);
+    // Desvincular jardineras y macetas asociadas a esta zona
+    const containers = this.getContainers();
+    let contMod = false;
+    containers.forEach(c => {
+      if (c.zoneId === id) {
+        c.zoneId = null;
+        contMod = true;
+      }
+    });
+    if (contMod) this.saveContainers(containers);
+
+    const pots = this.getPots();
+    let potsMod = false;
+    pots.forEach(p => {
+      if (p.zoneId === id) {
+        p.zoneId = null;
+        potsMod = true;
+      }
+    });
+    if (potsMod) this.savePots(pots);
+
+    return zones;
+  }
+
   getLogs() {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.LOGS);
+      const data = this._getItem(STORAGE_KEYS.LOGS);
       return data ? JSON.parse(data) : [];
     } catch {
       return [];
@@ -288,7 +408,7 @@ export class Database {
 
   saveLogs(logs) {
     try {
-      localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(logs));
+      this._setItem(STORAGE_KEYS.LOGS, JSON.stringify(logs));
     } catch (e) {
       console.warn('Error saving logs:', e);
     }
@@ -297,7 +417,8 @@ export class Database {
   resetToDefaults() {
     this.savePots(DEFAULT_POTS);
     this.saveContainers(DEFAULT_CONTAINERS);
-    localStorage.removeItem(STORAGE_KEYS.LOGS);
+    this.saveZones(DEFAULT_ZONES);
+    this._removeItem(STORAGE_KEYS.LOGS);
     return DEFAULT_POTS;
   }
 }

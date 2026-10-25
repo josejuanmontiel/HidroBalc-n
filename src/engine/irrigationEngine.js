@@ -93,30 +93,130 @@ export const POT_MATERIALS = {
   }
 };
 
+export const POT_SHAPES = {
+  round: {
+    id: 'round',
+    label: 'Cilíndrica / Redonda 🥣',
+    calculateLiters: (diameterCm, heightCm) => {
+      const radius = (diameterCm || 20) / 2;
+      const height = heightCm || 20;
+      // V = pi * r^2 * h (cm^3) / 1000 = Litros
+      return Math.round((Math.PI * Math.pow(radius, 2) * height / 1000) * 10) / 10;
+    }
+  },
+  rectangular: {
+    id: 'rectangular',
+    label: 'Prismática / Cuadrada / Jardinera 🧊',
+    calculateLiters: (lengthCm, widthCm, heightCm) => {
+      const l = lengthCm || 20;
+      const w = widthCm || 20;
+      const h = heightCm || 20;
+      // V = l * w * h (cm^3) / 1000 = Litros
+      return Math.round(((l * w * h) / 1000) * 10) / 10;
+    }
+  }
+};
+
+/**
+ * Orientaciones del balcón o terraza y su insolación solar típica
+ */
+export const BALCONY_ORIENTATIONS = {
+  south: {
+    id: 'south',
+    label: 'Sur (Pleno sol todo el día, máxima insolación)',
+    sunHoursBonus: 2.5,
+    dryingMultiplier: 1.25
+  },
+  southeast: {
+    id: 'southeast',
+    label: 'Sureste (Sol de mañana suave y mediodía)',
+    sunHoursBonus: 1.5,
+    dryingMultiplier: 1.12
+  },
+  southwest: {
+    id: 'southwest',
+    label: 'Suroeste (Sol ardiente de tarde)',
+    sunHoursBonus: 2.0,
+    dryingMultiplier: 1.22
+  },
+  east: {
+    id: 'east',
+    label: 'Este (Sol directo de mañana, fresco en la tarde)',
+    sunHoursBonus: 0.5,
+    dryingMultiplier: 1.0
+  },
+  west: {
+    id: 'west',
+    label: 'Oeste (Sombra de mañana, sol fuerte al atardecer)',
+    sunHoursBonus: 1.0,
+    dryingMultiplier: 1.1
+  },
+  north: {
+    id: 'north',
+    label: 'Norte (Sin sol directo o muy poco, ambiente fresco)',
+    sunHoursBonus: -2.0,
+    dryingMultiplier: 0.72
+  }
+};
+
+/**
+ * Factores de sombra por edificios colindantes, toldos o barandillas
+ */
+export const SHADE_FACTORS = {
+  none: {
+    id: 'none',
+    label: 'Despejado (Sin obstáculos ni edificios delante)',
+    hoursReduction: 0,
+    dryingMultiplier: 1.0
+  },
+  partial_building: {
+    id: 'partial_building',
+    label: 'Edificio o muro enfrente (Bloquea 2-3h de sol)',
+    hoursReduction: 2.5,
+    dryingMultiplier: 0.82
+  },
+  heavy_building: {
+    id: 'heavy_building',
+    label: 'Patio interior / Bloque alto muy cercano (Solo luz indirecta)',
+    hoursReduction: 5.0,
+    dryingMultiplier: 0.65
+  },
+  awning: {
+    id: 'awning',
+    label: 'Toldo / Pérgola protectora habitual',
+    hoursReduction: 3.5,
+    dryingMultiplier: 0.75
+  }
+};
+
 export const POT_SIZES = {
   small: {
     id: 'small',
     label: 'Pequeña (< 15 cm / < 2L)',
     dryingMultiplier: 1.7,
-    rootInsulation: 'mínima (se enfría y calienta rapidísimo)'
+    rootInsulation: 'mínima (se enfría y calienta rapidísimo)',
+    typicalLiters: 1.8
   },
   medium: {
     id: 'medium',
     label: 'Mediana (15 - 25 cm / 2L a 8L)',
     dryingMultiplier: 1.15,
-    rootInsulation: 'moderada'
+    rootInsulation: 'moderada',
+    typicalLiters: 5.5
   },
   large: {
     id: 'large',
     label: 'Grande (25 - 40 cm / 8L a 25L)',
     dryingMultiplier: 0.8,
-    rootInsulation: 'buena'
+    rootInsulation: 'buena',
+    typicalLiters: 16.0
   },
   planter: {
     id: 'planter',
     label: 'Jardinera corrida (> 40 cm / > 25L)',
     dryingMultiplier: 0.65,
-    rootInsulation: 'alta'
+    rootInsulation: 'alta',
+    typicalLiters: 32.0
   }
 };
 
@@ -124,19 +224,45 @@ export const SUN_EXPOSURES = {
   full_sun: {
     id: 'full_sun',
     label: 'Pleno Sol (> 5h sol directo)',
-    dryingMultiplier: 1.45
+    dryingMultiplier: 1.45,
+    baseSunHours: 6.5
   },
   partial_sun: {
     id: 'partial_sun',
     label: 'Semisombra (2 - 5h sol)',
-    dryingMultiplier: 1.0
+    dryingMultiplier: 1.0,
+    baseSunHours: 3.5
   },
   shade: {
     id: 'shade',
     label: 'Sombra Luminosa (< 2h sol)',
-    dryingMultiplier: 0.7
+    dryingMultiplier: 0.7,
+    baseSunHours: 1.0
   }
 };
+
+/**
+ * Calcula las horas estimadas de sol y factor de secado por orientación y sombras
+ */
+export function calculateOrientationAndShadowFactor({ orientation = 'south', shadow = 'none', baseExposure = 'full_sun' } = {}) {
+  const ori = BALCONY_ORIENTATIONS[orientation] || BALCONY_ORIENTATIONS.south;
+  const shd = SHADE_FACTORS[shadow] || SHADE_FACTORS.none;
+  const sunExp = SUN_EXPOSURES[baseExposure] || SUN_EXPOSURES.partial_sun;
+
+  // Horas teóricas de insolación directa diaria
+  const rawHours = sunExp.baseSunHours + ori.sunHoursBonus - shd.hoursReduction;
+  const estimatedSunHours = Math.max(0.5, Math.min(10.0, Math.round(rawHours * 10) / 10));
+
+  // Multiplicador compuesto por microclima de zona
+  const microclimateMultiplier = Math.round((ori.dryingMultiplier * shd.dryingMultiplier) * 100) / 100;
+
+  return {
+    orientation: ori,
+    shadow: shd,
+    estimatedSunHours,
+    microclimateMultiplier
+  };
+}
 
 /**
  * Evalúa los riesgos climáticos para el día actual y previsión próxima
@@ -242,6 +368,16 @@ export function calculatePotWatering(pot, weather, now = new Date()) {
     }
   }
 
+  // Zona del balcón / terraza ("contenedor de contenedores")
+  const zone = pot.zone || pot.container?.zone || null;
+  const orientation = pot.orientation || zone?.orientation || pot.container?.orientation || 'south';
+  const shadow = pot.shadow || zone?.shadow || pot.container?.shadow || 'none';
+  const microclimate = calculateOrientationAndShadowFactor({
+    orientation,
+    shadow,
+    baseExposure: rawSun
+  });
+
   const risks = analyzeWeatherRisks(weather);
   const envFactor = calculateEnvironmentalEvaporation(weather);
 
@@ -252,6 +388,7 @@ export function calculatePotWatering(pot, weather, now = new Date()) {
     material.dryingMultiplier *
     sizeMultiplier *
     sun.dryingMultiplier *
+    microclimate.microclimateMultiplier *
     envFactor
   );
 
@@ -370,6 +507,8 @@ export function calculatePotWatering(pot, weather, now = new Date()) {
     daysUntilWatering,
     alertBadge,
     balconyNotice,
-    weatherRisks: risks
+    weatherRisks: risks,
+    microclimate,
+    zone
   };
 }

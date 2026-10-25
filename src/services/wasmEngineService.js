@@ -174,7 +174,14 @@ class WasmEngineService {
   // Fallbacks JavaScript en caso de que Wasm esté inicializándose o en Node
   calculateDoseFallback(pot, weather) {
     let substrateLiters = 5.0;
-    if (pot.container) {
+    if (pot.substrateLiters && typeof pot.substrateLiters === 'number' && pot.substrateLiters > 0) {
+      substrateLiters = pot.substrateLiters;
+    } else if (pot.dimensions && pot.shape === 'round' && pot.dimensions.diameter && pot.dimensions.height) {
+      const r = pot.dimensions.diameter / 2;
+      substrateLiters = Math.round((Math.PI * Math.pow(r, 2) * pot.dimensions.height / 1000) * 10) / 10;
+    } else if (pot.dimensions && pot.dimensions.length && pot.dimensions.width && pot.dimensions.depth) {
+      substrateLiters = Math.round(((pot.dimensions.length * pot.dimensions.width * pot.dimensions.depth) / 1000) * 10) / 10;
+    } else if (pot.container) {
       const sections = Math.max(1, pot.container.sections || 1);
       substrateLiters = (pot.container.totalLiters || 32.0) / sections;
     } else {

@@ -13,7 +13,10 @@ import {
   PLANT_TYPES,
   POT_MATERIALS,
   POT_SIZES,
-  SUN_EXPOSURES
+  SUN_EXPOSURES,
+  POT_SHAPES,
+  BALCONY_ORIENTATIONS,
+  SHADE_FACTORS
 } from './engine/irrigationEngine.js';
 import { notificationService } from './services/notificationService.js';
 import { alarmService } from './services/alarmService.js';
@@ -30,12 +33,16 @@ class HidroBalconApp {
     this.taskDateFilter = this.getTodayDateStr();
     this.weatherData = null;
     this.pots = [];
+    this.containers = [];
+    this.zones = [];
     this.potCovers = {}; // map de potId -> dataUrl de la foto de portada
+    this.potInitials = {};
     this.potDoses = {};  // map de potId -> { doseMl, doseGlasses, explanation, isAdapted }
     this.timerSeconds = 180;
     this.initialTimerSeconds = 180;
     this.timerInterval = null;
     this.editingPotId = null;
+    this.isPotsCollapsed = false;
 
     // Detectar si el usuario abrió la app desde un link de calendario ?view=tasks&date=...
     if (typeof window !== 'undefined' && window.location.search) {
@@ -84,6 +91,7 @@ class HidroBalconApp {
   async refreshData(forceWeather = false) {
     this.pots = db.getPots();
     this.containers = db.getContainers();
+    this.zones = db.getZones();
     this.weatherData = await weatherService.getForecast(forceWeather);
 
     // Cargar fotos de portada, fotos iniciales y calcular dosis con motor WebAssembly en Go
@@ -96,6 +104,14 @@ class HidroBalconApp {
         pot.container = this.containers.find(c => c.id === pot.containerId) || null;
       } else {
         pot.container = null;
+      }
+
+      // Asociar zona si existe directamente o mediante el contenedor
+      const zoneId = pot.zoneId || pot.container?.zoneId;
+      if (zoneId) {
+        pot.zone = this.zones.find(z => z.id === zoneId) || null;
+      } else {
+        pot.zone = null;
       }
 
       try {
@@ -178,6 +194,12 @@ class HidroBalconApp {
             </button>
             <button id="btn-view-tasks" class="btn ${this.activeView === 'tasks' ? 'btn-primary' : ''}">
               📋 Tareas (${dueCount})
+            </button>
+            <button id="btn-open-zones" class="btn btn-sm" title="Zonas de la terraza, orientación y sombras">
+              🧭 Zonas
+            </button>
+            <button id="btn-open-global-gallery" class="btn btn-sm" title="Collage y evolución de todas las plantas">
+              🖼️ Galería
             </button>
             <button id="btn-open-backup" class="btn" title="Copia de seguridad y restauración completa">
               💾 Backup
@@ -359,6 +381,9 @@ class HidroBalconApp {
               </button>
             </div>
 
+            <button id="btn-toggle-collapse-pots" class="btn btn-sm" title="${this.isPotsCollapsed ? 'Expandir lista de macetas' : 'Colapsar lista de macetas'}">
+              ${this.isPotsCollapsed ? '📂 Expandir Lista' : '📁 Colapsar Lista'}
+            </button>
             <button id="btn-water-all" class="btn btn-water btn-sm" title="Marcar todas como regadas">
               💧 Regar Todo
             </button>
@@ -371,8 +396,8 @@ class HidroBalconApp {
           </div>
         </div>
 
-        <!-- POTS GRID -->
-        <div class="pots-grid" id="pots-grid">
+        <!-- POTS GRID (COLLAPSIBLE) -->
+        <div class="pots-grid" id="pots-grid" style="${this.isPotsCollapsed ? 'display:none;' : ''}">
           ${filteredPots.length > 0
             ? filteredPots.map(p => this.renderPotCard(p)).join('')
             : `<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--text-muted);">
@@ -380,6 +405,11 @@ class HidroBalconApp {
                </div>`
           }
         </div>
+        ${this.isPotsCollapsed ? `
+          <div style="text-align:center; padding:1.25rem; background:rgba(255,255,255,0.02); border:1px dashed var(--border-subtle); border-radius:var(--radius-md); color:var(--text-muted); font-size:0.85rem; cursor:pointer;" id="banner-expand-pots">
+            📁 Lista de ${calculatedPots.length} macetas colapsada para ahorrar espacio. <strong>Toca aquí para desplegarla ▾</strong>
+          </div>
+        ` : ''}
       </section>
     `;
   }
@@ -695,14 +725,25 @@ class HidroBalconApp {
                 <h3 class="pot-name">${pot.name}</h3>
                 <button class="btn-quick-rename" data-id="${pot.id}" data-name="${pot.name}" title="Editar nombre de la planta">✏️</button>
               </div>
-              <div class="pot-plant-type">${plant.label}</div>
+              <div class="pot-plant-type" style="display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; margin-top:0.15rem;">
+                <span>${plant.label}</span>
+                ${pot.speciesId ? `
+                  <button type="button" class="plant-bd-badge btn-view-species-sheet" data-species="${pot.speciesId}" title="Ver ficha técnica en catálogo botánico">
+                    📖 Ficha BD
+                  </button>
+                ` : ''}
+              </div>
               <div class="pot-tags">
+                ${pot.zone ? `<span class="tag tag-zone" title="Zona: ${pot.zone.name}">🧭 ${pot.zone.name.split('(')[0]}</span>` : ''}
                 ${pot.container ? `<span class="tag tag-container-parent" title="Planta en jardinera corrida compartida">🪴 ${pot.container.name}</span>` : ''}
                 <span class="tag tag-${pot.container ? pot.container.material : pot.material}">${material.label.split('(')[0]}</span>
+                ${pot.shape === 'round' ? '<span class="tag" title="Maceta cilíndrica / redonda">🥣 Redonda</span>' : ''}
                 <span class="tag ${(pot.container ? pot.container.isCovered : pot.isCovered) ? 'tag-covered' : 'tag-open'}">
                   ${(pot.container ? pot.container.isCovered : pot.isCovered) ? '🏠 Balcón Techado' : '☁️ Cielo Abierto'}
                 </span>
-                <span class="tag">${calc.sun.label.split('(')[0]}</span>
+                <span class="tag" title="${calc.microclimate ? `Insolación estimada: ~${calc.microclimate.estimatedSunHours}h sol directo` : ''}">
+                  ${calc.sun.label.split('(')[0]}${calc.microclimate ? ` (~${calc.microclimate.estimatedSunHours}h sol)` : ''}
+                </span>
               </div>
             </div>
           </div>
@@ -951,6 +992,36 @@ class HidroBalconApp {
     // Change City Button
     document.getElementById('btn-change-city')?.addEventListener('click', () => {
       this.openCityModal();
+    });
+
+    // Zones Button
+    document.getElementById('btn-open-zones')?.addEventListener('click', () => {
+      this.openZonesModal();
+    });
+
+    // Global Gallery Button
+    document.getElementById('btn-open-global-gallery')?.addEventListener('click', () => {
+      this.openGlobalGalleryModal();
+    });
+
+    // Toggle Collapse Pots List
+    document.getElementById('btn-toggle-collapse-pots')?.addEventListener('click', () => {
+      this.isPotsCollapsed = !this.isPotsCollapsed;
+      this.render();
+    });
+
+    document.getElementById('banner-expand-pots')?.addEventListener('click', () => {
+      this.isPotsCollapsed = false;
+      this.render();
+    });
+
+    // Ver Ficha Técnica de BD
+    document.querySelectorAll('.btn-view-species-sheet').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const speciesId = btn.dataset.species;
+        this.openSpeciesSheetModal(speciesId);
+      });
     });
 
     // APK & PWA Info Button
@@ -1741,8 +1812,19 @@ class HidroBalconApp {
                             ★ Portada
                           </button>
                         ` : ''}
+                        ${!photo.isInitial ? `
+                          <button class="btn btn-sm btn-make-initial" data-id="${photo.id}" title="Marcar como foto inicial de referencia">
+                            🌱 Inicial
+                          </button>
+                        ` : '<span class="tag tag-covered" style="font-size:0.62rem;">🌱 Foto Inicial</span>'}
                         <button class="btn btn-sm btn-make-instruction ${isInstruction ? 'active' : ''}" data-id="${photo.id}" title="${isInstruction ? 'Quitar de bloque de instrucciones' : 'Marcar para bloque de instrucciones/etiqueta'}">
                           ${isInstruction ? '✓ Es Instrucción' : '🏷️ Instrucciones'}
+                        </button>
+                        <button class="btn btn-sm btn-copy-photo" data-id="${photo.id}" title="Copiar esta foto/instrucción a otras plantas">
+                          📋 Copiar
+                        </button>
+                        <button class="btn btn-sm btn-move-photo" data-id="${photo.id}" title="Mover foto a otra maceta">
+                          ↗️ Mover
                         </button>
                         <button class="btn btn-sm btn-danger btn-delete-photo" data-id="${photo.id}" title="Eliminar esta foto">
                           🗑️
@@ -1869,6 +1951,18 @@ class HidroBalconApp {
       });
     });
 
+    // Botón para cambiar foto inicial
+    document.querySelectorAll('.btn-make-initial').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const photoId = btn.dataset.id;
+        await photoDb.setInitialPhoto(potId, photoId);
+        this.showToast('Foto inicial de referencia actualizada 🌱', 'success');
+        await this.refreshData();
+        this.render();
+        this.openPhotosModal(potId);
+      });
+    });
+
     // Botón para alternar foto como Instrucciones / Etiquetas
     document.querySelectorAll('.btn-make-instruction').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -1878,6 +1972,63 @@ class HidroBalconApp {
         await this.refreshData();
         this.render();
         this.openPhotosModal(potId);
+      });
+    });
+
+    // Copiar foto a otras macetas
+    document.querySelectorAll('.btn-copy-photo').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const photoId = btn.dataset.id;
+        const otherPots = db.getPots().filter(p => p.id !== potId);
+        if (otherPots.length === 0) {
+          alert('No hay otras macetas a las que copiar esta foto.');
+          return;
+        }
+
+        const choices = otherPots.map((p, i) => `${i + 1}. ${p.name}`).join('\n');
+        const ans = prompt(`¿A qué planta deseas copiar esta foto/instrucción?\nElige número o escribe "todas":\n${choices}`);
+        if (!ans) return;
+
+        let targetIds = [];
+        if (ans.trim().toLowerCase() === 'todas') {
+          targetIds = otherPots.map(p => p.id);
+        } else {
+          const num = parseInt(ans.trim(), 10);
+          if (num >= 1 && num <= otherPots.length) {
+            targetIds = [otherPots[num - 1].id];
+          }
+        }
+
+        if (targetIds.length > 0) {
+          await photoDb.copyPhotoToPots(photoId, targetIds);
+          this.showToast(`Foto copiada a ${targetIds.length} maceta(s) 📋`, 'success');
+        }
+      });
+    });
+
+    // Mover foto a otra maceta
+    document.querySelectorAll('.btn-move-photo').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const photoId = btn.dataset.id;
+        const otherPots = db.getPots().filter(p => p.id !== potId);
+        if (otherPots.length === 0) {
+          alert('No hay otras macetas a las que mover esta foto.');
+          return;
+        }
+
+        const choices = otherPots.map((p, i) => `${i + 1}. ${p.name}`).join('\n');
+        const ans = prompt(`¿A qué planta deseas mover esta foto?\nElige el número:\n${choices}`);
+        if (!ans) return;
+
+        const num = parseInt(ans.trim(), 10);
+        if (num >= 1 && num <= otherPots.length) {
+          const targetPot = otherPots[num - 1];
+          await photoDb.movePhotoToPot(photoId, targetPot.id);
+          this.showToast(`Foto movida a "${targetPot.name}" ↗️`, 'success');
+          await this.refreshData();
+          this.render();
+          this.openPhotosModal(potId);
+        }
       });
     });
 
@@ -2141,11 +2292,19 @@ class HidroBalconApp {
                   ${c.notes ? `<div style="font-size:0.75rem; color:#cbd5e1; font-style:italic;">"${c.notes}"</div>` : ''}
 
                   <div>
-                    <span style="font-size:0.72rem; color:var(--text-muted); font-weight:700;">Plantas alojadas (${assignedPlants.length} de ${c.sections}):</span>
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem;">
+                      <span style="font-size:0.72rem; color:var(--text-muted); font-weight:700;">Plantas alojadas (${assignedPlants.length} de ${c.sections}):</span>
+                      <button type="button" class="btn btn-sm btn-add-plant-to-container" data-container-id="${c.id}" style="font-size:0.68rem; padding:0.1rem 0.4rem;">
+                        ➕ Añadir Planta
+                      </button>
+                    </div>
                     <div class="container-plants-list">
                       ${assignedPlants.length > 0 ? assignedPlants.map(p => `
-                        <span class="tag tag-container-parent" style="font-size:0.7rem;">🌿 ${p.name}</span>
-                      `).join('') : `<span style="font-size:0.7rem; color:var(--text-muted);">Sin plantas asignadas aún. Asígnalas al crear o editar una planta.</span>`}
+                        <span class="tag tag-container-parent" style="font-size:0.7rem; display:inline-flex; align-items:center; gap:0.25rem;">
+                          🌿 ${p.name}
+                          <button type="button" class="btn-remove-from-container" data-pot-id="${p.id}" title="Desvincular de la jardinera" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:0.65rem; padding:0 0.15rem;">&times;</button>
+                        </span>
+                      `).join('') : `<span style="font-size:0.7rem; color:var(--text-muted);">Sin plantas asignadas aún. Pulsa "➕ Añadir Planta" para meter plantas en esta jardinera.</span>`}
                     </div>
                   </div>
                 </div>
@@ -2164,6 +2323,17 @@ class HidroBalconApp {
               <div class="form-group">
                 <label class="form-label" for="input-container-name">Nombre de la Jardinera:</label>
                 <input type="text" id="input-container-name" class="form-input" required placeholder="Ej: Jardinera Corrida Balcón Este (80cm)" />
+              </div>
+
+              <!-- ASIGNACIÓN A ZONA DE LA TERRAZA -->
+              <div class="form-group">
+                <label class="form-label" for="select-container-zone">🧭 Ubicar en Zona de Terraza:</label>
+                <select id="select-container-zone" class="form-select">
+                  <option value="">-- Sin zona fija --</option>
+                  ${(this.zones || db.getZones()).map(z => `
+                    <option value="${z.id}">🧭 ${z.name}</option>
+                  `).join('')}
+                </select>
               </div>
 
               <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-sm); padding:0.65rem; display:flex; flex-direction:column; gap:0.5rem;">
@@ -2264,9 +2434,39 @@ class HidroBalconApp {
     dimW?.addEventListener('input', updateCalculatedLiters);
     dimD?.addEventListener('input', updateCalculatedLiters);
 
+    // Botones para añadir planta directa a la jardinera
+    document.querySelectorAll('.btn-add-plant-to-container').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cId = btn.dataset.containerId;
+        container.innerHTML = '';
+        this.openPotModal();
+        // Prefijar el selector de jardinera
+        setTimeout(() => {
+          const sel = document.getElementById('select-container-parent');
+          if (sel) {
+            sel.value = cId;
+            sel.dispatchEvent(new Event('change'));
+          }
+        }, 50);
+      });
+    });
+
+    // Desvincular planta de la jardinera
+    document.querySelectorAll('.btn-remove-from-container').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const pId = btn.dataset.potId;
+        db.updatePot(pId, { containerId: null });
+        this.showToast('Planta desvinculada de la jardinera', 'info');
+        await this.refreshData();
+        this.render();
+        this.openContainersModal();
+      });
+    });
+
     document.getElementById('new-container-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = document.getElementById('input-container-name').value.trim();
+      const zoneId = document.getElementById('select-container-zone')?.value || null;
       const length = parseFloat(document.getElementById('input-dim-length')?.value || 0) || null;
       const width = parseFloat(document.getElementById('input-dim-width')?.value || 0) || null;
       const depth = parseFloat(document.getElementById('input-dim-depth')?.value || 0) || null;
@@ -2278,6 +2478,7 @@ class HidroBalconApp {
 
       db.addContainer({
         name,
+        zoneId,
         dimensions: (length && width && depth) ? { length, width, depth } : null,
         totalLiters,
         sections,
@@ -2304,6 +2505,269 @@ class HidroBalconApp {
         }
       });
     });
+  }
+
+  // ================= MODAL DE GESTIÓN DE ZONAS ("CONTENEDOR DE CONTENEDORES") ================= //
+
+  openZonesModal() {
+    const container = document.getElementById('modal-container');
+    if (!container) return;
+
+    const zones = db.getZones();
+    const containers = db.getContainers();
+    const pots = db.getPots();
+
+    container.innerHTML = `
+      <div class="modal-overlay active" id="zones-modal">
+        <div class="modal-content" style="max-width: 660px;">
+          <div class="modal-header">
+            <h3 class="modal-title">🧭 Zonas de Terraza & Microclimas</h3>
+            <button class="modal-close" id="btn-close-zones-modal">&times;</button>
+          </div>
+
+          <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4;">
+            Las <strong>Zonas</strong> actúan como "contenedor de contenedores" (ej: Balcón Principal Sur, Rincón Este con sombra de edificio).
+            Calculan automáticamente las horas reales de sol según la orientación cardinal y los obstáculos/sombras de edificios.
+          </p>
+
+          <!-- LISTA DE ZONAS -->
+          <div style="display:flex; flex-direction:column; gap:0.75rem; margin:1rem 0;" id="zones-list">
+            ${zones.length > 0 ? zones.map(z => {
+              const assignedContainers = containers.filter(c => c.zoneId === z.id);
+              const assignedPots = pots.filter(p => p.zoneId === z.id || p.container?.zoneId === z.id);
+              const ori = BALCONY_ORIENTATIONS[z.orientation] || BALCONY_ORIENTATIONS.south;
+              const shd = SHADE_FACTORS[z.shadow] || SHADE_FACTORS.none;
+
+              return `
+                <div class="zone-card" id="zone-card-${z.id}">
+                  <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div>
+                      <strong style="color:#ffffff; font-size:0.95rem;">🧭 ${z.name}</strong>
+                      <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">
+                        Orientación: <strong>${ori.label.split('(')[0]}</strong> • Sombra: <strong>${shd.label.split('(')[0]}</strong> • ${z.isCovered ? 'Bajo techo' : 'Cielo abierto'}
+                      </div>
+                    </div>
+                    <button class="btn btn-sm btn-delete-zone" data-id="${z.id}" title="Eliminar zona">🗑️</button>
+                  </div>
+
+                  ${z.notes ? `<div style="font-size:0.75rem; color:#cbd5e1; font-style:italic;">"${z.notes}"</div>` : ''}
+
+                  <div style="display:flex; gap:0.5rem; flex-wrap:wrap; font-size:0.72rem;">
+                    <span class="tag tag-zone">🪴 ${assignedContainers.length} jardineras</span>
+                    <span class="tag tag-covered">🌿 ${assignedPots.length} plantas</span>
+                  </div>
+                </div>
+              `;
+            }).join('') : `
+              <div style="text-align:center; padding:1.5rem; color:var(--text-muted); font-size:0.8rem;">
+                No hay zonas configuradas. Da de alta una a continuación.
+              </div>
+            `}
+          </div>
+
+          <!-- FORMULARIO NUEVA ZONA -->
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.85rem;">
+            <strong style="font-size:0.85rem; color:#ffffff; display:block; margin-bottom:0.6rem;">➕ Crear Nueva Zona de Terraza / Balcón:</strong>
+            <form id="new-zone-form" style="display:flex; flex-direction:column; gap:0.75rem;">
+              <div class="form-group">
+                <label class="form-label" for="input-zone-name">Nombre de la Zona:</label>
+                <input type="text" id="input-zone-name" class="form-input" required placeholder="Ej: Rincón Sureste - Sombra de Edificio" />
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+                <div class="form-group">
+                  <label class="form-label" for="select-zone-orientation">Orientación Cardinal:</label>
+                  <select id="select-zone-orientation" class="form-select">
+                    ${Object.values(BALCONY_ORIENTATIONS).map(o => `
+                      <option value="${o.id}">${o.label}</option>
+                    `).join('')}
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="select-zone-shadow">Obstáculos / Sombras de Edificios:</label>
+                  <select id="select-zone-shadow" class="form-select">
+                    ${Object.values(SHADE_FACTORS).map(s => `
+                      <option value="${s.id}">${s.label}</option>
+                    `).join('')}
+                  </select>
+                </div>
+              </div>
+
+              <label class="form-checkbox-row">
+                <input type="checkbox" id="check-zone-covered" />
+                <span><strong>Zona Techada / Porche:</strong> Protegida de lluvia directa por alero o balcón superior.</span>
+              </label>
+
+              <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.25rem;">
+                <button type="submit" class="btn btn-primary btn-sm">➕ Guardar Zona</button>
+              </div>
+            </form>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; margin-top:0.85rem;">
+            <button type="button" class="btn" id="btn-close-zones-footer">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('btn-close-zones-modal')?.addEventListener('click', () => { container.innerHTML = ''; });
+    document.getElementById('btn-close-zones-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
+
+    document.getElementById('new-zone-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('input-zone-name').value.trim();
+      const orientation = document.getElementById('select-zone-orientation').value;
+      const shadow = document.getElementById('select-zone-shadow').value;
+      const isCovered = document.getElementById('check-zone-covered').checked;
+
+      db.addZone({ name, orientation, shadow, isCovered });
+      this.showToast(`Zona "${name}" creada 🧭`, 'success');
+      await this.refreshData();
+      this.render();
+      this.openZonesModal();
+    });
+
+    document.querySelectorAll('.btn-delete-zone').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        if (confirm('¿Eliminar esta zona? Las macetas y jardineras asociadas quedarán sin zona asignada.')) {
+          db.deleteZone(id);
+          this.showToast('Zona eliminada', 'info');
+          await this.refreshData();
+          this.render();
+          this.openZonesModal();
+        }
+      });
+    });
+  }
+
+  // ================= MODAL COLLAGE GENERAL & EVOLUCIÓN BOTÁNICA ================= //
+
+  async openGlobalGalleryModal() {
+    const container = document.getElementById('modal-container');
+    if (!container) return;
+
+    const allPhotos = await photoDb.getAllPhotos();
+    const pots = db.getPots();
+    const potMap = new Map(pots.map(p => [p.id, p]));
+
+    container.innerHTML = `
+      <div class="modal-overlay active" id="global-gallery-modal">
+        <div class="modal-content" style="max-width: 720px;">
+          <div class="modal-header">
+            <h3 class="modal-title">🖼️ Galería y Evolución General (${allPhotos.length} fotos)</h3>
+            <button class="modal-close" id="btn-close-global-gallery">&times;</button>
+          </div>
+
+          <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4;">
+            Collage cronológico de todas las fotografías tomadas en el balcón. Toca cualquier foto para ampliarla o para ver la ficha de la planta.
+          </p>
+
+          <div class="global-gallery-grid">
+            ${allPhotos.length > 0 ? allPhotos.map(photo => {
+              const pot = potMap.get(photo.potId) || { name: 'Planta' };
+              const dStr = new Date(photo.date).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' });
+              return `
+                <div class="global-gallery-item btn-view-full-photo" data-img="${photo.dataUrl}" data-title="${pot.name} (${dStr})" title="${pot.name} - ${photo.note || dStr}">
+                  <img src="${photo.dataUrl}" alt="${pot.name}" loading="lazy" />
+                  <div class="global-gallery-badge">🌿 ${pot.name}</div>
+                </div>
+              `;
+            }).join('') : `
+              <div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-muted); font-size:0.85rem;">
+                No hay fotografías guardadas todavía en la base de datos.<br>
+                Toma fotos desde la tarjeta de cualquier maceta para ver aquí el collage de evolución.
+              </div>
+            `}
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; margin-top:0.85rem;">
+            <button type="button" class="btn" id="btn-close-global-gallery-footer">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('btn-close-global-gallery')?.addEventListener('click', () => { container.innerHTML = ''; });
+    document.getElementById('btn-close-global-gallery-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
+
+    document.querySelectorAll('.btn-view-full-photo').forEach(elem => {
+      elem.addEventListener('click', () => {
+        const imgUrl = elem.dataset.img;
+        const title = elem.dataset.title;
+        if (imgUrl) {
+          const w = window.open('');
+          if (w) {
+            w.document.write(`
+              <html>
+                <head><title>${title || 'Foto'}</title></head>
+                <body style="margin:0; background:#0f172a; display:flex; align-items:center; justify-content:center; height:100vh;">
+                  <img src="${imgUrl}" style="max-width:95vw; max-height:95vh; object-fit:contain; border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.7);" />
+                </body>
+              </html>
+            `);
+          }
+        }
+      });
+    });
+  }
+
+  // ================= MODAL FICHA TÉCNICA DE ESPECIE BOTÁNICA ================= //
+
+  openSpeciesSheetModal(speciesId) {
+    const container = document.getElementById('modal-container');
+    if (!container || !speciesId) return;
+
+    const plant = plantApiService.getCatalogPlantById(speciesId);
+    if (!plant) {
+      this.showToast('Ficha técnica no encontrada en catálogo local', 'info');
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="modal-overlay active" id="species-sheet-modal">
+        <div class="modal-content" style="max-width: 580px;">
+          <div class="modal-header">
+            <h3 class="modal-title">📖 Ficha Botánica: ${plant.name}</h3>
+            <button class="modal-close" id="btn-close-species-modal">&times;</button>
+          </div>
+
+          <div style="display:flex; align-items:center; gap:0.85rem; padding:0.5rem 0; border-bottom:1px solid var(--border-subtle);">
+            <div style="font-size:2.8rem; line-height:1;">${plant.icon}</div>
+            <div>
+              <h4 style="margin:0; font-size:1.15rem; color:#ffffff;">${plant.name}</h4>
+              <div style="font-style:italic; color:#94a3b8; font-size:0.85rem;">${plant.scientificName}</div>
+              <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-top:0.35rem;">
+                <span class="plant-badge water-${plant.waterNeed}">💧 Demanda: ${plant.waterNeed}</span>
+                <span class="plant-badge frost-${plant.frostResistance}">❄️ Frío: ${plant.frostResistance}</span>
+                <span class="plant-badge">☀️ Exposición: ${plant.defaultSun}</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="font-size:0.85rem; color:#cbd5e1; line-height:1.5; margin:0.75rem 0;">
+            <p>${plant.description}</p>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem; font-size:0.78rem;">
+            <strong style="color:#ffffff; display:block; margin-bottom:0.35rem;">🌱 Consejos de Cultivo en Balcón y Maceta:</strong>
+            <ul style="padding-left:1.2rem; color:var(--text-muted); display:flex; flex-direction:column; gap:0.25rem;">
+              <li><strong>Material idóneo:</strong> ${plant.defaultMaterial === 'terracotta' ? 'Barro cocido transpirable' : 'Plástico o resina'}</li>
+              <li><strong>Volumen recomendado:</strong> Maceta ${plant.defaultSize}</li>
+              <li><strong>Etiquetas botánicas:</strong> ${plant.tags ? plant.tags.join(', ') : 'cultivo en España'}</li>
+            </ul>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; margin-top:0.85rem;">
+            <button type="button" class="btn" id="btn-close-species-footer">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('btn-close-species-modal')?.addEventListener('click', () => { container.innerHTML = ''; });
+    document.getElementById('btn-close-species-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
   }
 
   // ================= MODALS: TIMER, POT, CITY, APK ================= //
@@ -2449,9 +2913,14 @@ class HidroBalconApp {
     const isEdit = Boolean(editId);
     const pot = isEdit ? db.getPot(editId) : {
       name: '',
+      speciesId: null,
+      importSource: null,
       plantType: 'flowering',
       material: 'terracotta',
+      shape: 'rectangular', // 'rectangular' | 'round'
+      dimensions: { length: 20, width: 20, depth: 20, diameter: 20, height: 20 },
       size: 'medium',
+      zoneId: '',
       sunExposure: 'full_sun',
       isCovered: false,
       notes: ''
@@ -2519,9 +2988,17 @@ class HidroBalconApp {
               </div>
             </div>
 
+            <input type="hidden" id="input-species-id" value="${pot.speciesId || ''}" />
+            <input type="hidden" id="input-import-source" value="${pot.importSource || ''}" />
+
             <div class="form-group">
-              <label class="form-label" for="input-pot-name">Nombre / Identificador de la Maceta:</label>
-              <input type="text" id="input-pot-name" class="form-input" required placeholder="Ej: Geranio Balcón Este" value="${pot.name || ''}" />
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <label class="form-label" for="input-pot-name">Nombre Propio / Identificador:</label>
+                <span id="badge-species-linked" style="${pot.speciesId ? 'display:inline-flex;' : 'display:none;'}" class="plant-bd-badge">
+                  📖 Vinculada a especie en BD
+                </span>
+              </div>
+              <input type="text" id="input-pot-name" class="form-input" required placeholder="Ej: Mi Albahaca de Génova, Tomate del Abuelo..." value="${pot.name || ''}" />
             </div>
 
             <!-- FOTO DE LA MACETA -->
@@ -2542,7 +3019,7 @@ class HidroBalconApp {
             </div>
 
             <div class="form-group">
-              <label class="form-label" for="select-plant-type">Tipo de Planta:</label>
+              <label class="form-label" for="select-plant-type">Tipo de Planta / Demanda Hídrica:</label>
               <select id="select-plant-type" class="form-select">
                 ${Object.values(PLANT_TYPES).map(pt => `
                   <option value="${pt.id}" ${pt.id === pot.plantType ? 'selected' : ''}>
@@ -2552,9 +3029,10 @@ class HidroBalconApp {
               </select>
             </div>
 
+            <!-- SELECT JARDINERA PADRE -->
             <div class="form-group">
               <div style="display:flex; justify-content:space-between; align-items:center;">
-                <label class="form-label" for="select-container-parent">🪴 Ubicación / Jardinera Compartida (opcional):</label>
+                <label class="form-label" for="select-container-parent">🪴 Jardinera Corrida Compartida (opcional):</label>
                 <button type="button" class="btn btn-sm" id="btn-quick-manage-containers" style="font-size:0.7rem; padding:0.15rem 0.45rem;">
                   ⚙️ Gestionar Jardineras
                 </button>
@@ -2568,47 +3046,125 @@ class HidroBalconApp {
                 `).join('')}
               </select>
               <span style="font-size:0.7rem; color:var(--text-muted);">
-                Si seleccionas una jardinera, la planta heredará la inercia térmica de su volumen y su exposición solar.
+                Si eliges una jardinera, la planta compartirá el sustrato, la inercia térmica y el material de la jardinera.
               </span>
             </div>
 
-            <div class="form-group">
-              <label class="form-label" for="select-material">Material de la Maceta:</label>
-              <select id="select-material" class="form-select">
-                ${Object.values(POT_MATERIALS).map(m => `
-                  <option value="${m.id}" ${m.id === pot.material ? 'selected' : ''}>
-                    ${m.label}
+            <!-- ZONA DE LA TERRAZA (ORIENTACIÓN & SOMBRAS) -->
+            <div class="form-group" id="group-pot-zone">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <label class="form-label" for="select-pot-zone">🧭 Zona de la Terraza / Microclima:</label>
+                <button type="button" class="btn btn-sm" id="btn-quick-manage-zones" style="font-size:0.7rem; padding:0.15rem 0.45rem;">
+                  ⚙️ Gestionar Zonas
+                </button>
+              </div>
+              <select id="select-pot-zone" class="form-select">
+                <option value="">-- Sin zona fija asignada --</option>
+                ${(this.zones || db.getZones()).map(z => `
+                  <option value="${z.id}" ${z.id === pot.zoneId ? 'selected' : ''}>
+                    🧭 ${z.name} (${z.orientation})
                   </option>
                 `).join('')}
               </select>
             </div>
 
-            <div class="form-group">
-              <label class="form-label" for="select-size">Tamaño / Volumen de Sustrato individual:</label>
-              <select id="select-size" class="form-select">
-                ${Object.values(POT_SIZES).map(s => `
-                  <option value="${s.id}" ${s.id === pot.size ? 'selected' : ''}>
-                    ${s.label}
-                  </option>
-                `).join('')}
-              </select>
-            </div>
+            <!-- CAMPOS PROPIOS DE MACETA INDIVIDUAL (SE OCULTAN SI SE ELIGE JARDINERA PREVIA) -->
+            <div id="individual-pot-fields" style="${pot.containerId ? 'display:none;' : 'display:flex; flex-direction:column; gap:1rem;'}">
+              <div class="form-group">
+                <label class="form-label" for="select-material">Material de la Maceta:</label>
+                <select id="select-material" class="form-select">
+                  ${Object.values(POT_MATERIALS).map(m => `
+                    <option value="${m.id}" ${m.id === pot.material ? 'selected' : ''}>
+                      ${m.label}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
 
-            <div class="form-group">
-              <label class="form-label" for="select-sun">Exposición Solar:</label>
-              <select id="select-sun" class="form-select">
-                ${Object.values(SUN_EXPOSURES).map(sun => `
-                  <option value="${sun.id}" ${sun.id === pot.sunExposure ? 'selected' : ''}>
-                    ${sun.label}
-                  </option>
-                `).join('')}
-              </select>
-            </div>
+              <!-- FORMA DE LA MACETA: REDONDA VS RECTANGULAR -->
+              <div class="form-group">
+                <label class="form-label">Forma geométrica de la maceta:</label>
+                <div class="pot-shape-selector">
+                  <button type="button" class="pot-shape-btn ${pot.shape === 'round' ? 'active' : ''}" id="btn-shape-round" data-shape="round">
+                    🥣 Cilíndrica / Redonda
+                  </button>
+                  <button type="button" class="pot-shape-btn ${pot.shape !== 'round' ? 'active' : ''}" id="btn-shape-rect" data-shape="rectangular">
+                    🧊 Prismática / Cuadrada
+                  </button>
+                </div>
+                <input type="hidden" id="input-pot-shape" value="${pot.shape || 'rectangular'}" />
+              </div>
 
-            <label class="form-checkbox-row">
-              <input type="checkbox" id="check-covered" ${pot.isCovered ? 'checked' : ''} />
-              <span><strong>Balcón Techado:</strong> La lluvia exterior no moja directamente esta maceta.</span>
-            </label>
+              <!-- DIMENSIONES SEGÚN FORMA -->
+              <div id="shape-dims-round" style="${pot.shape === 'round' ? 'display:flex;' : 'display:none;'} flex-direction:column; gap:0.5rem; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-sm); padding:0.65rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:0.75rem; font-weight:700; color:#ffffff;">🥣 Dimensiones Maceta Redonda (cm):</span>
+                  <span id="badge-calc-round-liters" style="font-size:0.72rem; color:#34d399; font-weight:700; background:rgba(16,185,129,0.15); padding:0.15rem 0.5rem; border-radius:var(--radius-full); border:1px solid rgba(16,185,129,0.3);">
+                    📐 Calculado: ~${pot.dimensions?.diameter ? Math.round(Math.PI * Math.pow(pot.dimensions.diameter/2, 2) * (pot.dimensions.height || 20) / 100) / 10 : 6.3} L
+                  </span>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="input-dim-diameter" style="font-size:0.7rem;">Diámetro superior (cm):</label>
+                    <input type="number" id="input-dim-diameter" class="form-input" min="5" max="150" value="${pot.dimensions?.diameter || 20}" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                  </div>
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="input-dim-round-height" style="font-size:0.7rem;">Altura (cm):</label>
+                    <input type="number" id="input-dim-round-height" class="form-input" min="5" max="150" value="${pot.dimensions?.height || 20}" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                  </div>
+                </div>
+              </div>
+
+              <div id="shape-dims-rect" style="${pot.shape !== 'round' ? 'display:flex;' : 'display:none;'} flex-direction:column; gap:0.5rem; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-sm); padding:0.65rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:0.75rem; font-weight:700; color:#ffffff;">🧊 Dimensiones Maceta Rectangular (cm):</span>
+                  <span id="badge-calc-rect-liters" style="font-size:0.72rem; color:#34d399; font-weight:700; background:rgba(16,185,129,0.15); padding:0.15rem 0.5rem; border-radius:var(--radius-full); border:1px solid rgba(16,185,129,0.3);">
+                    📐 Calculado: ~${pot.dimensions?.length ? Math.round((pot.dimensions.length * (pot.dimensions.width||20) * (pot.dimensions.depth||20))/100)/10 : 8.0} L
+                  </span>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem;">
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="input-dim-pot-l" style="font-size:0.7rem;">Largo:</label>
+                    <input type="number" id="input-dim-pot-l" class="form-input" min="5" max="150" value="${pot.dimensions?.length || 20}" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                  </div>
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="input-dim-pot-w" style="font-size:0.7rem;">Ancho:</label>
+                    <input type="number" id="input-dim-pot-w" class="form-input" min="5" max="150" value="${pot.dimensions?.width || 20}" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                  </div>
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="input-dim-pot-d" style="font-size:0.7rem;">Profundidad:</label>
+                    <input type="number" id="input-dim-pot-d" class="form-input" min="5" max="150" value="${pot.dimensions?.depth || 20}" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="select-size">Categoría de Volumen de Sustrato individual:</label>
+                <select id="select-size" class="form-select">
+                  ${Object.values(POT_SIZES).map(s => `
+                    <option value="${s.id}" ${s.id === pot.size ? 'selected' : ''}>
+                      ${s.label}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="select-sun">Exposición Solar:</label>
+                <select id="select-sun" class="form-select">
+                  ${Object.values(SUN_EXPOSURES).map(sun => `
+                    <option value="${sun.id}" ${sun.id === pot.sunExposure ? 'selected' : ''}>
+                      ${sun.label}
+                    </option>
+                  `).join('')}
+                </select>
+              </div>
+
+              <label class="form-checkbox-row">
+                <input type="checkbox" id="check-covered" ${pot.isCovered ? 'checked' : ''} />
+                <span><strong>Balcón Techado:</strong> La lluvia exterior no moja directamente esta maceta.</span>
+              </label>
+            </div>
 
             <div class="form-group">
               <label class="form-label" for="input-notes">Notas adicionales (opcional):</label>
@@ -2651,9 +3207,83 @@ class HidroBalconApp {
       }
     });
 
+    // Gestión de forma y dimensiones
+    const btnShapeRound = document.getElementById('btn-shape-round');
+    const btnShapeRect = document.getElementById('btn-shape-rect');
+    const shapeInput = document.getElementById('input-pot-shape');
+    const dimsRoundWrap = document.getElementById('shape-dims-round');
+    const dimsRectWrap = document.getElementById('shape-dims-rect');
+    const diameterInput = document.getElementById('input-dim-diameter');
+    const roundHInput = document.getElementById('input-dim-round-height');
+    const rectLInput = document.getElementById('input-dim-pot-l');
+    const rectWInput = document.getElementById('input-dim-pot-w');
+    const rectDInput = document.getElementById('input-dim-pot-d');
+    const badgeRoundLiters = document.getElementById('badge-calc-round-liters');
+    const badgeRectLiters = document.getElementById('badge-calc-rect-liters');
+
+    const updateRoundLiters = () => {
+      const d = parseFloat(diameterInput?.value || 0);
+      const h = parseFloat(roundHInput?.value || 0);
+      if (d > 0 && h > 0) {
+        const liters = POT_SHAPES.round.calculateLiters(d, h);
+        if (badgeRoundLiters) badgeRoundLiters.innerText = `📐 Calculado: ~${liters} L`;
+      }
+    };
+
+    const updateRectLiters = () => {
+      const l = parseFloat(rectLInput?.value || 0);
+      const w = parseFloat(rectWInput?.value || 0);
+      const d = parseFloat(rectDInput?.value || 0);
+      if (l > 0 && w > 0 && d > 0) {
+        const liters = POT_SHAPES.rectangular.calculateLiters(l, w, d);
+        if (badgeRectLiters) badgeRectLiters.innerText = `📐 Calculado: ~${liters} L`;
+      }
+    };
+
+    diameterInput?.addEventListener('input', updateRoundLiters);
+    roundHInput?.addEventListener('input', updateRoundLiters);
+    rectLInput?.addEventListener('input', updateRectLiters);
+    rectWInput?.addEventListener('input', updateRectLiters);
+    rectDInput?.addEventListener('input', updateRectLiters);
+
+    btnShapeRound?.addEventListener('click', () => {
+      btnShapeRound.classList.add('active');
+      btnShapeRect?.classList.remove('active');
+      if (shapeInput) shapeInput.value = 'round';
+      if (dimsRoundWrap) dimsRoundWrap.style.display = 'flex';
+      if (dimsRectWrap) dimsRectWrap.style.display = 'none';
+      updateRoundLiters();
+    });
+
+    btnShapeRect?.addEventListener('click', () => {
+      btnShapeRect.classList.add('active');
+      btnShapeRound?.classList.remove('active');
+      if (shapeInput) shapeInput.value = 'rectangular';
+      if (dimsRectWrap) dimsRectWrap.style.display = 'flex';
+      if (dimsRoundWrap) dimsRoundWrap.style.display = 'none';
+      updateRectLiters();
+    });
+
+    // Si se selecciona jardinera previa, ocultar selector de tipo y dimensiones de maceta individual
+    const selectContainer = document.getElementById('select-container-parent');
+    const individualFields = document.getElementById('individual-pot-fields');
+    selectContainer?.addEventListener('change', () => {
+      const hasContainer = Boolean(selectContainer.value);
+      if (individualFields) {
+        individualFields.style.display = hasContainer ? 'none' : 'flex';
+      }
+    });
+
+    document.getElementById('btn-quick-manage-zones')?.addEventListener('click', () => {
+      this.openZonesModal();
+    });
+
     // Configurar Asistente Botánico
     this.setupBotanicalAssistant(container, (plant) => {
       const nameInput = document.getElementById('input-pot-name');
+      const speciesIdInput = document.getElementById('input-species-id');
+      const importSourceInput = document.getElementById('input-import-source');
+      const badgeSpecies = document.getElementById('badge-species-linked');
       const plantTypeSelect = document.getElementById('select-plant-type');
       const materialSelect = document.getElementById('select-material');
       const sizeSelect = document.getElementById('select-size');
@@ -2666,6 +3296,10 @@ class HidroBalconApp {
         void nameInput.offsetWidth;
         nameInput.classList.add('field-highlighted');
       }
+
+      if (speciesIdInput) speciesIdInput.value = plant.id || '';
+      if (importSourceInput) importSourceInput.value = plant.scientificName ? `Ficha ${plant.scientificName}` : 'Catálogo Botánico';
+      if (badgeSpecies) badgeSpecies.style.display = 'inline-flex';
 
       if (plantTypeSelect && plant.plantType) {
         plantTypeSelect.value = plant.plantType;
@@ -2727,9 +3361,29 @@ class HidroBalconApp {
     document.getElementById('pot-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = document.getElementById('input-pot-name').value.trim();
+      const speciesId = document.getElementById('input-species-id')?.value || null;
+      const importSource = document.getElementById('input-import-source')?.value || null;
       const containerId = document.getElementById('select-container-parent')?.value || null;
+      const zoneId = document.getElementById('select-pot-zone')?.value || null;
       const plantType = document.getElementById('select-plant-type').value;
       const material = document.getElementById('select-material').value;
+      const shape = document.getElementById('input-pot-shape')?.value || 'rectangular';
+      
+      let dimensions = null;
+      let calculatedSubstrateLiters = null;
+      if (shape === 'round') {
+        const d = parseFloat(document.getElementById('input-dim-diameter')?.value || 20);
+        const h = parseFloat(document.getElementById('input-dim-round-height')?.value || 20);
+        dimensions = { diameter: d, height: h };
+        calculatedSubstrateLiters = POT_SHAPES.round.calculateLiters(d, h);
+      } else {
+        const l = parseFloat(document.getElementById('input-dim-pot-l')?.value || 20);
+        const w = parseFloat(document.getElementById('input-dim-pot-w')?.value || 20);
+        const depth = parseFloat(document.getElementById('input-dim-pot-d')?.value || 20);
+        dimensions = { length: l, width: w, depth };
+        calculatedSubstrateLiters = POT_SHAPES.rectangular.calculateLiters(l, w, depth);
+      }
+
       const size = document.getElementById('select-size').value;
       const sunExposure = document.getElementById('select-sun').value;
       const isCovered = document.getElementById('check-covered').checked;
@@ -2738,12 +3392,42 @@ class HidroBalconApp {
       let targetPotId = editId;
 
       if (isEdit) {
-        db.updatePot(editId, { name, containerId, plantType, material, size, sunExposure, isCovered, notes });
+        db.updatePot(editId, {
+          name,
+          speciesId,
+          importSource,
+          containerId,
+          zoneId,
+          plantType,
+          material,
+          shape,
+          dimensions,
+          substrateLiters: calculatedSubstrateLiters,
+          size,
+          sunExposure,
+          isCovered,
+          notes
+        });
         this.showToast('Maceta actualizada', 'success');
       } else {
-        const newPot = db.addPot({ name, containerId, plantType, material, size, sunExposure, isCovered, notes });
+        const newPot = db.addPot({
+          name,
+          speciesId,
+          importSource,
+          containerId,
+          zoneId,
+          plantType,
+          material,
+          shape,
+          dimensions,
+          substrateLiters: calculatedSubstrateLiters,
+          size,
+          sunExposure,
+          isCovered,
+          notes
+        });
         targetPotId = newPot.id;
-        this.showToast('Nueva maceta añadida', 'success');
+        this.showToast('Nueva maceta añadida ✨', 'success');
       }
 
       if (compressedPhotoData && targetPotId) {
@@ -2756,9 +3440,15 @@ class HidroBalconApp {
         });
       }
 
-      container.innerHTML = '';
       await this.refreshData();
       this.render();
+
+      // TRAS CREAR: Llevar a la edición/ficha de la maceta creada
+      if (!isEdit && targetPotId) {
+        this.openPotModal(targetPotId);
+      } else {
+        container.innerHTML = '';
+      }
     });
   }
 

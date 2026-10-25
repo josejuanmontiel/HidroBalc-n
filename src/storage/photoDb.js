@@ -324,6 +324,103 @@ export class PhotoDatabase {
       getReq.onerror = (e) => reject(e.target.error);
     });
   }
+
+  /**
+   * Obtiene todas las fotos de todas las macetas (útil para collage general y evolución del balcón)
+   */
+  async getAllPhotos() {
+    const db = await this.dbPromise;
+    if (!db) return [];
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const photos = request.result || [];
+        // Ordenar cronológicamente (más recientes primero)
+        photos.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        resolve(photos);
+      };
+      request.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /**
+   * Copia una foto (por ejemplo, ficha de instrucciones o guía) a una o más macetas destino
+   * @param {string} sourcePhotoId
+   * @param {string[]} targetPotIds
+   */
+  async copyPhotoToPots(sourcePhotoId, targetPotIds = []) {
+    const db = await this.dbPromise;
+    if (!db || targetPotIds.length === 0) return false;
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const getReq = store.get(sourcePhotoId);
+
+      getReq.onsuccess = () => {
+        const sourcePhoto = getReq.result;
+        if (!sourcePhoto) {
+          resolve(false);
+          return;
+        }
+
+        targetPotIds.forEach(targetId => {
+          const newPhoto = {
+            ...sourcePhoto,
+            id: `photo-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+            potId: targetId,
+            date: new Date().toISOString(),
+            isCover: false,
+            isInitial: false
+          };
+          store.add(newPhoto);
+        });
+      };
+
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /**
+   * Mueve una foto de una maceta a otra
+   * @param {string} photoId
+   * @param {string} newPotId
+   */
+  async movePhotoToPot(photoId, newPotId) {
+    const db = await this.dbPromise;
+    if (!db || !newPotId) return false;
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const getReq = store.get(photoId);
+
+      getReq.onsuccess = () => {
+        const photo = getReq.result;
+        if (!photo) {
+          resolve(false);
+          return;
+        }
+
+        const updated = {
+          ...photo,
+          potId: newPotId,
+          isCover: false,
+          isInitial: false
+        };
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve(true);
+        putReq.onerror = (e) => reject(e.target.error);
+      };
+
+      getReq.onerror = (e) => reject(e.target.error);
+    });
+  }
 }
 
 export const photoDb = new PhotoDatabase();
