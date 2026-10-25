@@ -10,6 +10,7 @@ import { simulatorService, SIMULATION_SCENARIOS } from './services/simulatorServ
 import {
   calculatePotWatering,
   analyzeWeatherRisks,
+  getSeasonalDaylightFactor,
   PLANT_TYPES,
   POT_MATERIALS,
   POT_SIZES,
@@ -43,6 +44,7 @@ class HidroBalconApp {
     this.timerInterval = null;
     this.editingPotId = null;
     this.isPotsCollapsed = false;
+    this.isCompactView = false;
 
     // Detectar si el usuario abrió la app desde un link de calendario ?view=tasks&date=...
     if (typeof window !== 'undefined' && window.location.search) {
@@ -195,8 +197,8 @@ class HidroBalconApp {
             <button id="btn-view-tasks" class="btn ${this.activeView === 'tasks' ? 'btn-primary' : ''}">
               📋 Tareas (${dueCount})
             </button>
-            <button id="btn-open-zones" class="btn btn-sm" title="Zonas de la terraza, orientación y sombras">
-              🧭 Zonas
+            <button id="btn-open-config" class="btn btn-sm" title="Parámetros agronómicos, horas de sol e inercia hídrica">
+              ⚙️ Parámetros
             </button>
             <button id="btn-open-global-gallery" class="btn btn-sm" title="Collage y evolución de todas las plantas">
               🖼️ Galería
@@ -381,11 +383,17 @@ class HidroBalconApp {
               </button>
             </div>
 
+            <button id="btn-toggle-compact-view" class="btn btn-sm" title="${this.isCompactView ? 'Cambiar a vista de tarjetas detalladas' : 'Cambiar a lista compacta en 1 línea'}">
+              ${this.isCompactView ? '🗂️ Vista Tarjetas' : '📄 Vista Compacta'}
+            </button>
             <button id="btn-toggle-collapse-pots" class="btn btn-sm" title="${this.isPotsCollapsed ? 'Expandir lista de macetas' : 'Colapsar lista de macetas'}">
               ${this.isPotsCollapsed ? '📂 Expandir Lista' : '📁 Colapsar Lista'}
             </button>
             <button id="btn-water-all" class="btn btn-water btn-sm" title="Marcar todas como regadas">
               💧 Regar Todo
+            </button>
+            <button id="btn-open-zones" class="btn btn-sm" title="Zonas de la terraza, orientación y sombras">
+              🧭 Zonas
             </button>
             <button id="btn-open-containers" class="btn btn-sm" title="Gestionar Jardineras Corridas y Contenedores Compartidos">
               🪴 Jardineras
@@ -396,20 +404,25 @@ class HidroBalconApp {
           </div>
         </div>
 
-        <!-- POTS GRID (COLLAPSIBLE) -->
-        <div class="pots-grid" id="pots-grid" style="${this.isPotsCollapsed ? 'display:none;' : ''}">
-          ${filteredPots.length > 0
-            ? filteredPots.map(p => this.renderPotCard(p)).join('')
-            : `<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--text-muted);">
-                 No hay macetas en este filtro.
-               </div>`
-          }
-        </div>
-        ${this.isPotsCollapsed ? `
+        <!-- POTS GRID O LISTA COMPACTA (COLLAPSIBLE) -->
+        ${!this.isPotsCollapsed ? (
+          this.isCompactView
+            ? this.renderCompactPotsList(filteredPots)
+            : `
+              <div class="pots-grid" id="pots-grid">
+                ${filteredPots.length > 0
+                  ? filteredPots.map(p => this.renderPotCard(p)).join('')
+                  : `<div style="grid-column: 1/-1; text-align: center; padding: 3rem; color: var(--text-muted);">
+                       No hay macetas en este filtro.
+                     </div>`
+                }
+              </div>
+            `
+        ) : `
           <div style="text-align:center; padding:1.25rem; background:rgba(255,255,255,0.02); border:1px dashed var(--border-subtle); border-radius:var(--radius-md); color:var(--text-muted); font-size:0.85rem; cursor:pointer;" id="banner-expand-pots">
             📁 Lista de ${calculatedPots.length} macetas colapsada para ahorrar espacio. <strong>Toca aquí para desplegarla ▾</strong>
           </div>
-        ` : ''}
+        `}
       </section>
     `;
   }
@@ -698,6 +711,80 @@ class HidroBalconApp {
     `;
   }
 
+  renderCompactPotsList(pots) {
+    if (pots.length === 0) {
+      return `
+        <div style="text-align: center; padding: 3rem; color: var(--text-muted); background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+          No hay macetas en este filtro.
+        </div>
+      `;
+    }
+
+    return `
+      <div class="pots-compact-table">
+        ${pots.map(pot => {
+          const calc = pot.calc;
+          const plant = calc.plantType;
+          const moisture = calc.soilMoisturePercent;
+          const coverPhoto = this.potCovers[pot.id];
+          const dose = this.potDoses[pot.id] || { doseGlasses: 2.0, doseMl: 500, isAdapted: false };
+
+          let barColor = '#10b981';
+          if (calc.status === 'urgent') barColor = '#ef4444';
+          else if (calc.status === 'due') barColor = '#f59e0b';
+          else if (calc.status === 'saturated') barColor = '#0284c7';
+          else if (calc.status === 'frozen_hold') barColor = '#38bdf8';
+
+          const locationText = pot.container
+            ? `🪴 ${pot.container.name}`
+            : (pot.zone ? `🧭 ${pot.zone.name}` : 'Maceta indep.');
+
+          return `
+            <div class="pot-compact-row status-${calc.status}" id="pot-compact-${pot.id}" data-pot-id="${pot.id}">
+              <div class="pot-compact-thumb">
+                ${coverPhoto
+                  ? `<img src="${coverPhoto}" alt="${pot.name}" />`
+                  : `<div style="font-size:1.15rem; line-height:1;">${plant.icon}</div>`
+                }
+              </div>
+
+              <div class="pot-compact-info">
+                <div class="pot-compact-name" title="${pot.name}">
+                  ${pot.name}
+                </div>
+                <div class="pot-compact-meta">
+                  <span>${locationText}</span>
+                  <span>•</span>
+                  <span>${plant.label}</span>
+                  ${pot.speciesId ? `<span>•</span><button type="button" class="btn-view-species-sheet" data-species="${pot.speciesId}" style="background:none; border:none; padding:0; color:#38bdf8; font-size:0.68rem; cursor:pointer; text-decoration:underline;">📖 Ficha</button>` : ''}
+                  ${pot.importUrl ? `<span>•</span><a href="${pot.importUrl}" target="_blank" rel="noopener noreferrer" style="color:#60a5fa; font-size:0.68rem; text-decoration:none;">🌐 Original ↗</a>` : ''}
+                </div>
+              </div>
+
+              <div class="pot-compact-moisture" title="Humedad: ${moisture}%">
+                <div class="pot-compact-bar-wrap">
+                  <div class="pot-compact-bar-fill" style="width: ${moisture}%; background: ${barColor};"></div>
+                </div>
+                <span style="font-size: 0.72rem; font-weight: 700; color: ${barColor}; min-width: 32px; text-align: right;">${moisture}%</span>
+              </div>
+
+              <div class="pot-compact-dose" title="${dose.doseGlasses} vasos (~${dose.doseMl} ml)">
+                💧 <strong>${dose.doseGlasses}v</strong>
+              </div>
+
+              <div class="pot-compact-actions">
+                <button class="btn btn-sm btn-water btn-action-water" data-id="${pot.id}" title="Marcar como regado">💧</button>
+                <button class="btn btn-sm btn-action-finger" data-id="${pot.id}" title="Prueba del dedo">👉</button>
+                <button class="btn btn-sm btn-action-photos" data-id="${pot.id}" title="Fotos y evolución">📸</button>
+                <button class="btn btn-sm btn-action-edit" data-id="${pot.id}" title="Editar maceta">✏️</button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
   renderPotCard(pot) {
     const calc = pot.calc;
     const plant = calc.plantType;
@@ -711,6 +798,8 @@ class HidroBalconApp {
     else if (calc.status === 'due') barColor = '#f59e0b';
     else if (calc.status === 'saturated') barColor = '#0284c7';
     else if (calc.status === 'frozen_hold') barColor = '#38bdf8';
+
+    const originalUrl = pot.importUrl || (pot.speciesId ? `https://es.wikipedia.org/wiki/${encodeURIComponent(plantApiService.getCatalogPlantById(pot.speciesId)?.scientificName || pot.name)}` : null);
 
     return `
       <article class="pot-card status-${calc.status}" id="pot-${pot.id}" data-pot-id="${pot.id}">
@@ -731,6 +820,11 @@ class HidroBalconApp {
                   <button type="button" class="plant-bd-badge btn-view-species-sheet" data-species="${pot.speciesId}" title="Ver ficha técnica en catálogo botánico">
                     📖 Ficha BD
                   </button>
+                ` : ''}
+                ${originalUrl ? `
+                  <a href="${originalUrl}" target="_blank" rel="noopener noreferrer" class="plant-bd-badge" style="text-decoration:none; color:#60a5fa; background:rgba(96,165,250,0.15); border-color:rgba(96,165,250,0.3);" title="Ver ficha original en Wikipedia / Base botánica">
+                    🌐 Ficha Original ↗
+                  </a>
                 ` : ''}
               </div>
               <div class="pot-tags">
@@ -992,6 +1086,17 @@ class HidroBalconApp {
     // Change City Button
     document.getElementById('btn-change-city')?.addEventListener('click', () => {
       this.openCityModal();
+    });
+
+    // Config / Parameters Modal Button
+    document.getElementById('btn-open-config')?.addEventListener('click', () => {
+      this.openConfigModal();
+    });
+
+    // Toggle Compact Pots List View (1-line vs card)
+    document.getElementById('btn-toggle-compact-view')?.addEventListener('click', () => {
+      this.isCompactView = !this.isCompactView;
+      this.render();
     });
 
     // Zones Button
@@ -1975,60 +2080,19 @@ class HidroBalconApp {
       });
     });
 
-    // Copiar foto a otras macetas
+    // Copiar foto a otras macetas usando Modal Tipo Explorador
     document.querySelectorAll('.btn-copy-photo').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const photoId = btn.dataset.id;
-        const otherPots = db.getPots().filter(p => p.id !== potId);
-        if (otherPots.length === 0) {
-          alert('No hay otras macetas a las que copiar esta foto.');
-          return;
-        }
-
-        const choices = otherPots.map((p, i) => `${i + 1}. ${p.name}`).join('\n');
-        const ans = prompt(`¿A qué planta deseas copiar esta foto/instrucción?\nElige número o escribe "todas":\n${choices}`);
-        if (!ans) return;
-
-        let targetIds = [];
-        if (ans.trim().toLowerCase() === 'todas') {
-          targetIds = otherPots.map(p => p.id);
-        } else {
-          const num = parseInt(ans.trim(), 10);
-          if (num >= 1 && num <= otherPots.length) {
-            targetIds = [otherPots[num - 1].id];
-          }
-        }
-
-        if (targetIds.length > 0) {
-          await photoDb.copyPhotoToPots(photoId, targetIds);
-          this.showToast(`Foto copiada a ${targetIds.length} maceta(s) 📋`, 'success');
-        }
+        this.openPhotoExplorerModal(photoId, potId, 'copy');
       });
     });
 
-    // Mover foto a otra maceta
+    // Mover foto a otra maceta usando Modal Tipo Explorador
     document.querySelectorAll('.btn-move-photo').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', () => {
         const photoId = btn.dataset.id;
-        const otherPots = db.getPots().filter(p => p.id !== potId);
-        if (otherPots.length === 0) {
-          alert('No hay otras macetas a las que mover esta foto.');
-          return;
-        }
-
-        const choices = otherPots.map((p, i) => `${i + 1}. ${p.name}`).join('\n');
-        const ans = prompt(`¿A qué planta deseas mover esta foto?\nElige el número:\n${choices}`);
-        if (!ans) return;
-
-        const num = parseInt(ans.trim(), 10);
-        if (num >= 1 && num <= otherPots.length) {
-          const targetPot = otherPots[num - 1];
-          await photoDb.movePhotoToPot(photoId, targetPot.id);
-          this.showToast(`Foto movida a "${targetPot.name}" ↗️`, 'success');
-          await this.refreshData();
-          this.render();
-          this.openPhotosModal(potId);
-        }
+        this.openPhotoExplorerModal(photoId, potId, 'move');
       });
     });
 
@@ -2037,10 +2101,159 @@ class HidroBalconApp {
         const photoId = btn.dataset.id;
         if (confirm('¿Seguro que deseas eliminar esta foto?')) {
           await photoDb.deletePhoto(photoId);
+          // Si era la foto de portada o la última foto, limpiar la caché local de portada
+          const remaining = await photoDb.getPhotosByPot(potId);
+          if (remaining.length === 0) {
+            delete this.potCovers[potId];
+            delete this.potInitials[potId];
+          }
           this.showToast('Foto eliminada', 'info');
           await this.refreshData();
           this.render();
           this.openPhotosModal(potId);
+        }
+      });
+    });
+  }
+
+  // ================= MODAL EXPLORADOR DE ARCHIVOS / MACETAS PARA FOTOS ================= //
+
+  openPhotoExplorerModal(photoId, sourcePotId, action = 'copy') {
+    const container = document.getElementById('modal-container');
+    if (!container) return;
+
+    const allPots = db.getPots();
+    const otherPots = allPots.filter(p => p.id !== sourcePotId);
+    if (otherPots.length === 0) {
+      alert('No hay otras macetas disponibles para esta operación.');
+      return;
+    }
+
+    const zones = db.getZones();
+    const containers = db.getContainers();
+    const isCopy = action === 'copy';
+
+    // Agrupar macetas por zona y jardinera
+    const unzonedPots = otherPots.filter(p => !p.zoneId && !p.container?.zoneId);
+
+    container.innerHTML = `
+      <div class="modal-overlay active" id="photo-explorer-modal" style="z-index: 1050;">
+        <div class="modal-content" style="max-width: 580px;">
+          <div class="modal-header">
+            <h3 class="modal-title">🗂️ ${isCopy ? 'Copiar Foto a Maceta' : 'Mover Foto a Otra Maceta'}</h3>
+            <button class="modal-close" id="btn-close-explorer-modal">&times;</button>
+          </div>
+
+          <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4;">
+            Selecciona la maceta de destino en el árbol de tu terraza.
+            ${isCopy ? 'También puedes copiar rápidamente a todas las plantas de una misma jardinera.' : 'La foto se trasladará a la maceta seleccionada.'}
+          </p>
+
+          <div style="max-height: 55vh; overflow-y: auto; padding-right: 0.25rem;">
+            ${zones.map(z => {
+              const zoneContainers = containers.filter(c => c.zoneId === z.id);
+              const zoneDirectPots = otherPots.filter(p => p.zoneId === z.id && !p.containerId);
+
+              return `
+                <div class="tree-zone-group">
+                  <div class="tree-zone-header">
+                    <span>🧭 ${z.name}</span>
+                  </div>
+
+                  ${zoneContainers.map(c => {
+                    const cPots = otherPots.filter(p => p.containerId === c.id);
+                    return `
+                      <div class="tree-container-group">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem;">
+                          <strong style="font-size:0.78rem; color:#ffffff;">🪴 ${c.name} (${cPots.length} plantas)</strong>
+                          ${isCopy && cPots.length > 0 ? `
+                            <button type="button" class="btn btn-sm btn-water btn-copy-to-container" data-container-id="${c.id}" style="font-size:0.65rem; padding:0.15rem 0.45rem;">
+                              Copiar a todas (${cPots.length})
+                            </button>
+                          ` : ''}
+                        </div>
+                        ${cPots.map(p => `
+                          <div class="tree-pot-item btn-select-explorer-pot" data-pot-id="${p.id}" data-pot-name="${p.name}">
+                            <span style="font-size:0.78rem; color:#cbd5e1;">🌿 ${p.name}</span>
+                            <span class="btn btn-sm" style="font-size:0.68rem; padding:0.15rem 0.4rem;">${isCopy ? '📋 Copiar aquí' : '↗️ Mover aquí'}</span>
+                          </div>
+                        `).join('')}
+                      </div>
+                    `;
+                  }).join('')}
+
+                  ${zoneDirectPots.map(p => `
+                    <div class="tree-pot-item btn-select-explorer-pot" data-pot-id="${p.id}" data-pot-name="${p.name}">
+                      <span style="font-size:0.78rem; color:#cbd5e1;">🪴 ${p.name}</span>
+                      <span class="btn btn-sm" style="font-size:0.68rem; padding:0.15rem 0.4rem;">${isCopy ? '📋 Copiar aquí' : '↗️ Mover aquí'}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              `;
+            }).join('')}
+
+            ${unzonedPots.length > 0 ? `
+              <div class="tree-zone-group">
+                <div class="tree-zone-header">
+                  <span>📍 Macetas sin zona fija (${unzonedPots.length})</span>
+                </div>
+                ${unzonedPots.map(p => `
+                  <div class="tree-pot-item btn-select-explorer-pot" data-pot-id="${p.id}" data-pot-name="${p.name}">
+                    <span style="font-size:0.78rem; color:#cbd5e1;">🪴 ${p.name}</span>
+                    <span class="btn btn-sm" style="font-size:0.68rem; padding:0.15rem 0.4rem;">${isCopy ? '📋 Copiar aquí' : '↗️ Mover aquí'}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; margin-top:0.85rem; border-top:1px solid var(--border-subtle); padding-top:0.65rem;">
+            <button type="button" class="btn btn-sm" id="btn-cancel-explorer">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const closeExplorer = () => {
+      this.openPhotosModal(sourcePotId);
+    };
+
+    document.getElementById('btn-close-explorer-modal')?.addEventListener('click', closeExplorer);
+    document.getElementById('btn-cancel-explorer')?.addEventListener('click', closeExplorer);
+
+    // Click en una maceta específica
+    document.querySelectorAll('.btn-select-explorer-pot').forEach(el => {
+      el.addEventListener('click', async () => {
+        const targetPotId = el.dataset.potId;
+        const targetPotName = el.dataset.potName;
+        if (!targetPotId) return;
+
+        if (isCopy) {
+          await photoDb.copyPhotoToPots(photoId, [targetPotId]);
+          this.showToast(`Foto copiada a "${targetPotName}" 📋`, 'success');
+        } else {
+          await photoDb.movePhotoToPot(photoId, targetPotId);
+          this.showToast(`Foto movida a "${targetPotName}" ↗️`, 'success');
+        }
+
+        await this.refreshData();
+        this.render();
+        closeExplorer();
+      });
+    });
+
+    // Copiar a todas las macetas de una jardinera
+    document.querySelectorAll('.btn-copy-to-container').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const cId = btn.dataset.containerId;
+        const targetPots = otherPots.filter(p => p.containerId === cId);
+        if (targetPots.length > 0) {
+          await photoDb.copyPhotoToPots(photoId, targetPots.map(p => p.id));
+          this.showToast(`Foto copiada a las ${targetPots.length} plantas de la jardinera 📋`, 'success');
+          await this.refreshData();
+          this.render();
+          closeExplorer();
         }
       });
     });
@@ -2166,7 +2379,17 @@ class HidroBalconApp {
             <button type="button" class="btn btn-sm btn-preset-dose" data-ratio="1.25">125% (+extra)</button>
           </div>
 
-          <div id="water-confirm-note" style="font-size:0.75rem; text-align:center; min-height:1.4rem; margin-bottom:0.75rem;"></div>
+          <!-- BOTÓN ESPECIAL PARA MACETAS GRANDES / FONDO HÚMEDO -->
+          <div style="margin-top: 0.6rem; background: rgba(56, 189, 248, 0.08); border: 1px dashed rgba(56, 189, 248, 0.35); border-radius: var(--radius-sm); padding: 0.55rem; text-align: center;">
+            <button type="button" class="btn btn-sm" id="btn-deep-moisture-feedback" style="background: rgba(14, 165, 233, 0.25); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4); font-size: 0.75rem; width: 100%;">
+              🪵 Maceta grande con otras plantas: Sustrato profundo aún húmedo (-50%)
+            </button>
+            <span style="display:block; font-size:0.68rem; color:var(--text-muted); margin-top:0.25rem;">
+              En macetones y jardineras compartidas, las raíces profundas tardan más en secar. Ajusta la dosis e informa al motor adaptativo.
+            </span>
+          </div>
+
+          <div id="water-confirm-note" style="font-size:0.75rem; text-align:center; min-height:1.4rem; margin-top:0.5rem; margin-bottom:0.75rem;"></div>
 
           <div style="display:flex; justify-content:space-between; align-items:center; margin-top:1rem; border-top:1px solid var(--border-subtle); padding-top:0.75rem;">
             <button type="button" class="btn btn-sm" id="btn-cancel-water-confirm">Cancelar</button>
@@ -2197,13 +2420,27 @@ class HidroBalconApp {
       }
     });
 
+    let isDeepMoistureCalib = false;
+
     document.querySelectorAll('.btn-preset-dose').forEach(btn => {
       btn.addEventListener('click', () => {
+        isDeepMoistureCalib = false;
         const ratio = parseFloat(btn.dataset.ratio);
         const base = currentDose.doseGlasses || 2.0;
         selectedGlasses = Math.max(0.5, Math.round((base * ratio) * 2) / 2);
         renderDoseValue();
       });
+    });
+
+    document.getElementById('btn-deep-moisture-feedback')?.addEventListener('click', () => {
+      isDeepMoistureCalib = true;
+      const base = currentDose.doseGlasses || 2.0;
+      selectedGlasses = Math.max(0.5, Math.round((base * 0.5) * 2) / 2);
+      renderDoseValue();
+      const feedbackNoteEl = document.getElementById('water-confirm-note');
+      if (feedbackNoteEl) {
+        feedbackNoteEl.innerHTML = `<span style="color:#38bdf8;">🪵 <strong>Inercia de sustrato profundo:</strong> Dosis reducida a la mitad. Se calibrará el motor para reducir la frecuencia en maceta grande.</span>`;
+      }
     });
 
     document.getElementById('btn-submit-water-confirm')?.addEventListener('click', async () => {
@@ -2213,12 +2450,12 @@ class HidroBalconApp {
 
       audioService.playWaterDropSound();
 
-      // Si el usuario decidió regar menos conscientemente, alimentar al modelo adaptativo
-      if (isReduced || isExtra) {
+      // Si el usuario decidió regar menos conscientemente o activó inercia profunda, alimentar al modelo adaptativo
+      if (isReduced || isExtra || isDeepMoistureCalib) {
         try {
           const feedback = {
-            daysElapsed: 2.0,
-            observedMoistureLevel: isReduced ? 2 : 1,
+            daysElapsed: isDeepMoistureCalib ? 3.0 : 2.0,
+            observedMoistureLevel: isDeepMoistureCalib ? 3 : (isReduced ? 2 : 1),
             waterGivenGlasses: selectedGlasses,
             meanTempObserved: this.weatherData?.currentTemp ?? 22.0
           };
@@ -2235,9 +2472,11 @@ class HidroBalconApp {
         }
       }
 
-      const noteText = isReduced
-        ? `Riego reducido voluntariamente: ${selectedGlasses} vasos (~${actualMl} ml) [Ajuste adaptativo]`
-        : (isExtra ? `Riego extra: ${selectedGlasses} vasos (~${actualMl} ml)` : `Riego óptimo: ${selectedGlasses} vasos`);
+      const noteText = isDeepMoistureCalib
+        ? `Riego ajustado por inercia profunda/maceta grande: ${selectedGlasses} vasos (~${actualMl} ml)`
+        : (isReduced
+            ? `Riego reducido voluntariamente: ${selectedGlasses} vasos (~${actualMl} ml) [Ajuste adaptativo]`
+            : (isExtra ? `Riego extra: ${selectedGlasses} vasos (~${actualMl} ml)` : `Riego óptimo: ${selectedGlasses} vasos`));
 
       db.recordWatering(potId, new Date().toISOString(), noteText);
 
@@ -2250,24 +2489,25 @@ class HidroBalconApp {
 
   // ================= MODAL GESTOR DE JARDINERAS CORRIDAS (CONTENEDORES PADRE) ================= //
 
-  openContainersModal() {
+  openContainersModal(editContainerId = null) {
     const container = document.getElementById('modal-container');
     if (!container) return;
 
     const containers = db.getContainers();
     const pots = db.getPots();
+    const editingC = editContainerId ? containers.find(c => c.id === editContainerId) : null;
 
     container.innerHTML = `
       <div class="modal-overlay active" id="containers-modal">
-        <div class="modal-content" style="max-width: 650px;">
+        <div class="modal-content" style="max-width: 670px;">
           <div class="modal-header">
-            <h3 class="modal-title">🪴 Jardineras Corridas & Contenedores Padre</h3>
+            <h3 class="modal-title">🪴 Jardineras Corridas & Macetones</h3>
             <button class="modal-close" id="btn-close-containers-modal">&times;</button>
           </div>
 
           <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4;">
-            Una jardinera corrida alberga varias plantas distintas compartiendo un volumen grande de tierra.
-            El motor agronómico divide el volumen entre las secciones y aplica la mayor inercia térmica contra el secado.
+            Una jardinera o macetón corrido alberga varias plantas compartiendo volumen de sustrato e inercia térmica.
+            Al editar su zona o techado, <strong>se actualizará automáticamente para todas las plantas alojadas</strong>.
           </p>
 
           <!-- LISTA DE JARDINERAS EXISTENTES -->
@@ -2275,16 +2515,20 @@ class HidroBalconApp {
             ${containers.length > 0 ? containers.map(c => {
               const assignedPlants = pots.filter(p => p.containerId === c.id);
               const perSectionLiters = Math.round((c.totalLiters / (c.sections || 1)) * 10) / 10;
+              const shapeLabel = c.shape === 'round' ? '🥣 Cilíndrica' : '🧊 Rectangular';
+              const zoneObj = (this.zones || db.getZones()).find(z => z.id === c.zoneId);
+
               return `
-                <div class="container-card" id="container-card-${c.id}">
+                <div class="container-card" id="container-card-${c.id}" style="${editingC?.id === c.id ? 'border-color:var(--primary-light); background:rgba(16,185,129,0.06);' : ''}">
                   <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                     <div>
                       <strong style="color:#ffffff; font-size:0.95rem;">🪴 ${c.name}</strong>
                       <div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">
-                        ${c.totalLiters} L totales • ${c.sections} secciones (~${perSectionLiters} L/sección) • ${c.material === 'terracotta' ? 'Barro' : 'Plástico'} • ${c.isCovered ? 'Techada' : 'Cielo Abierto'}${c.dimensions ? ` • 📏 ${c.dimensions.length}×${c.dimensions.width}×${c.dimensions.depth} cm` : ''}
+                        ${c.totalLiters} L totales • ${c.sections} secciones (~${perSectionLiters} L/sección) • ${shapeLabel} • ${c.material === 'terracotta' ? 'Barro' : 'Plástico'} • ${c.isCovered ? 'Techada' : 'Cielo Abierto'}${zoneObj ? ` • 🧭 ${zoneObj.name}` : ''}
                       </div>
                     </div>
                     <div style="display:flex; gap:0.4rem;">
+                      <button class="btn btn-sm btn-edit-container" data-id="${c.id}" title="Editar jardinera">✏️</button>
                       <button class="btn btn-sm btn-delete-container" data-id="${c.id}" title="Eliminar jardinera">🗑️</button>
                     </div>
                   </div>
@@ -2294,9 +2538,6 @@ class HidroBalconApp {
                   <div>
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.3rem;">
                       <span style="font-size:0.72rem; color:var(--text-muted); font-weight:700;">Plantas alojadas (${assignedPlants.length} de ${c.sections}):</span>
-                      <button type="button" class="btn btn-sm btn-add-plant-to-container" data-container-id="${c.id}" style="font-size:0.68rem; padding:0.1rem 0.4rem;">
-                        ➕ Añadir Planta
-                      </button>
                     </div>
                     <div class="container-plants-list">
                       ${assignedPlants.length > 0 ? assignedPlants.map(p => `
@@ -2304,7 +2545,7 @@ class HidroBalconApp {
                           🌿 ${p.name}
                           <button type="button" class="btn-remove-from-container" data-pot-id="${p.id}" title="Desvincular de la jardinera" style="background:none; border:none; color:#f87171; cursor:pointer; font-size:0.65rem; padding:0 0.15rem;">&times;</button>
                         </span>
-                      `).join('') : `<span style="font-size:0.7rem; color:var(--text-muted);">Sin plantas asignadas aún. Pulsa "➕ Añadir Planta" para meter plantas en esta jardinera.</span>`}
+                      `).join('') : `<span style="font-size:0.7rem; color:var(--text-muted);">Sin plantas asignadas aún. Puedes asociar plantas a esta jardinera al crearlas o editarlas.</span>`}
                     </div>
                   </div>
                 </div>
@@ -2316,13 +2557,17 @@ class HidroBalconApp {
             `}
           </div>
 
-          <!-- FORMULARIO NUEVA JARDINERA -->
-          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.85rem;">
-            <strong style="font-size:0.85rem; color:#ffffff; display:block; margin-bottom:0.6rem;">➕ Dar de alta nueva Jardinera Corrida:</strong>
+          <!-- FORMULARIO NUEVA / EDITAR JARDINERA -->
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.85rem;" id="container-form-wrap">
+            <strong style="font-size:0.85rem; color:#ffffff; display:block; margin-bottom:0.6rem;">
+              ${editingC ? `✏️ Editando Jardinera "${editingC.name}":` : '➕ Dar de alta nueva Jardinera o Macetón Compartido:'}
+            </strong>
             <form id="new-container-form" style="display:flex; flex-direction:column; gap:0.75rem;">
+              <input type="hidden" id="input-edit-container-id" value="${editingC?.id || ''}" />
+
               <div class="form-group">
                 <label class="form-label" for="input-container-name">Nombre de la Jardinera:</label>
-                <input type="text" id="input-container-name" class="form-input" required placeholder="Ej: Jardinera Corrida Balcón Este (80cm)" />
+                <input type="text" id="input-container-name" class="form-input" required placeholder="Ej: Jardinera Corrida Balcón Este (80cm) o Macetón Cilíndrico" value="${editingC?.name || ''}" />
               </div>
 
               <!-- ASIGNACIÓN A ZONA DE LA TERRAZA -->
@@ -2331,45 +2576,80 @@ class HidroBalconApp {
                 <select id="select-container-zone" class="form-select">
                   <option value="">-- Sin zona fija --</option>
                   ${(this.zones || db.getZones()).map(z => `
-                    <option value="${z.id}">🧭 ${z.name}</option>
+                    <option value="${z.id}" ${editingC?.zoneId === z.id ? 'selected' : ''}>🧭 ${z.name}</option>
                   `).join('')}
                 </select>
+                <span style="font-size:0.68rem; color:var(--text-muted);">
+                  💡 Al cambiar la zona de la jardinera, se propagará recursivamente a todas sus plantas hijas.
+                </span>
               </div>
 
-              <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-sm); padding:0.65rem; display:flex; flex-direction:column; gap:0.5rem;">
+              <!-- FORMA DE LA JARDINERA: RECTANGULAR VS REDONDA -->
+              <div class="form-group">
+                <label class="form-label">Forma geométrica del contenedor:</label>
+                <div class="pot-shape-selector">
+                  <button type="button" class="pot-shape-btn ${(editingC?.shape || 'rectangular') !== 'round' ? 'active' : ''}" id="btn-c-shape-rect">
+                    🧊 Rectangular / Corrida
+                  </button>
+                  <button type="button" class="pot-shape-btn ${editingC?.shape === 'round' ? 'active' : ''}" id="btn-c-shape-round">
+                    🥣 Macetón Redondo / Cilíndrico
+                  </button>
+                </div>
+                <input type="hidden" id="input-container-shape" value="${editingC?.shape || 'rectangular'}" />
+              </div>
+
+              <!-- DIMENSIONES RECTANGULARES -->
+              <div id="c-dims-rect" style="${(editingC?.shape || 'rectangular') !== 'round' ? 'display:flex;' : 'display:none;'} flex-direction:column; gap:0.5rem; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-sm); padding:0.65rem;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                  <span style="font-size:0.75rem; font-weight:700; color:#ffffff;">📏 Dimensiones de la Jardinera (cm):</span>
-                  <span id="dimensions-calc-badge" style="font-size:0.72rem; color:#34d399; font-weight:700; background:rgba(16,185,129,0.15); padding:0.15rem 0.5rem; border-radius:var(--radius-full); border:1px solid rgba(16,185,129,0.3);">
-                    📐 Calculado: ~40 L
+                  <span style="font-size:0.75rem; font-weight:700; color:#ffffff;">📏 Dimensiones Rectangulares (cm):</span>
+                  <span id="c-dims-badge-rect" style="font-size:0.72rem; color:#34d399; font-weight:700; background:rgba(16,185,129,0.15); padding:0.15rem 0.5rem; border-radius:var(--radius-full); border:1px solid rgba(16,185,129,0.3);">
+                    📐 Calculado: ~${editingC?.dimensions?.length ? Math.round((editingC.dimensions.length * (editingC.dimensions.width||25) * (editingC.dimensions.depth||20))/100)/10 : 40} L
                   </span>
                 </div>
                 <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.5rem;">
                   <div class="form-group" style="margin:0;">
-                    <label class="form-label" for="input-dim-length" style="font-size:0.7rem;">Largo (cm):</label>
-                    <input type="number" id="input-dim-length" class="form-input" min="10" max="300" placeholder="Ej: 80" value="80" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                    <label class="form-label" for="input-c-length" style="font-size:0.7rem;">Largo (cm):</label>
+                    <input type="number" id="input-c-length" class="form-input" min="10" max="300" value="${editingC?.dimensions?.length || 80}" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
                   </div>
                   <div class="form-group" style="margin:0;">
-                    <label class="form-label" for="input-dim-width" style="font-size:0.7rem;">Ancho (cm):</label>
-                    <input type="number" id="input-dim-width" class="form-input" min="10" max="150" placeholder="Ej: 25" value="25" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                    <label class="form-label" for="input-c-width" style="font-size:0.7rem;">Ancho (cm):</label>
+                    <input type="number" id="input-c-width" class="form-input" min="10" max="150" value="${editingC?.dimensions?.width || 25}" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
                   </div>
                   <div class="form-group" style="margin:0;">
-                    <label class="form-label" for="input-dim-depth" style="font-size:0.7rem;">Profundidad (cm):</label>
-                    <input type="number" id="input-dim-depth" class="form-input" min="10" max="150" placeholder="Ej: 20" value="20" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                    <label class="form-label" for="input-c-depth" style="font-size:0.7rem;">Profundidad (cm):</label>
+                    <input type="number" id="input-c-depth" class="form-input" min="10" max="150" value="${editingC?.dimensions?.depth || 20}" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
                   </div>
                 </div>
-                <span style="font-size:0.68rem; color:var(--text-muted); line-height:1.2;">
-                  💡 El volumen se calcula como (Largo × Ancho × Profundidad) / 1000. Puedes ajustar los litros resultantes manualmente si tiene forma cónica o fondo irregular.
-                </span>
+              </div>
+
+              <!-- DIMENSIONES REDONDAS / CILÍNDRICAS -->
+              <div id="c-dims-round" style="${editingC?.shape === 'round' ? 'display:flex;' : 'display:none;'} flex-direction:column; gap:0.5rem; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-sm); padding:0.65rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:0.75rem; font-weight:700; color:#ffffff;">🥣 Dimensiones Macetón Cilíndrico (cm):</span>
+                  <span id="c-dims-badge-round" style="font-size:0.72rem; color:#34d399; font-weight:700; background:rgba(16,185,129,0.15); padding:0.15rem 0.5rem; border-radius:var(--radius-full); border:1px solid rgba(16,185,129,0.3);">
+                    📐 Calculado: ~${editingC?.dimensions?.diameter ? Math.round(Math.PI * Math.pow(editingC.dimensions.diameter/2, 2) * (editingC.dimensions.height||40) / 100) / 10 : 50.3} L
+                  </span>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="input-c-diameter" style="font-size:0.7rem;">Diámetro (cm):</label>
+                    <input type="number" id="input-c-diameter" class="form-input" min="15" max="200" value="${editingC?.dimensions?.diameter || 40}" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                  </div>
+                  <div class="form-group" style="margin:0;">
+                    <label class="form-label" for="input-c-height" style="font-size:0.7rem;">Altura (cm):</label>
+                    <input type="number" id="input-c-height" class="form-input" min="15" max="200" value="${editingC?.dimensions?.height || 40}" style="padding:0.35rem 0.5rem; font-size:0.8rem;" />
+                  </div>
+                </div>
               </div>
 
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
                 <div class="form-group">
                   <label class="form-label" for="input-container-liters">Volumen Total (Litros):</label>
-                  <input type="number" id="input-container-liters" class="form-input" required min="5" max="500" step="0.5" value="40" />
+                  <input type="number" id="input-container-liters" class="form-input" required min="5" max="500" step="0.5" value="${editingC?.totalLiters || 40}" />
                 </div>
                 <div class="form-group">
                   <label class="form-label" for="input-container-sections">Número de Secciones / Plantas:</label>
-                  <input type="number" id="input-container-sections" class="form-input" required min="1" max="10" value="3" />
+                  <input type="number" id="input-container-sections" class="form-input" required min="1" max="10" value="${editingC?.sections || 3}" />
                 </div>
               </div>
 
@@ -2377,27 +2657,30 @@ class HidroBalconApp {
                 <div class="form-group">
                   <label class="form-label" for="select-container-material">Material:</label>
                   <select id="select-container-material" class="form-select">
-                    <option value="terracotta">Barro cocido / Terracota</option>
-                    <option value="plastic">Plástico / Resina</option>
+                    <option value="terracotta" ${(editingC?.material || 'terracotta') === 'terracotta' ? 'selected' : ''}>Barro cocido / Terracota</option>
+                    <option value="plastic" ${editingC?.material === 'plastic' ? 'selected' : ''}>Plástico / Resina</option>
                   </select>
                 </div>
                 <div class="form-group">
                   <label class="form-label" for="select-container-sun">Exposición:</label>
                   <select id="select-container-sun" class="form-select">
-                    <option value="full_sun">Pleno Sol</option>
-                    <option value="partial_sun" selected>Semisombra</option>
-                    <option value="shade">Sombra</option>
+                    <option value="full_sun" ${(editingC?.sunExposure || 'partial_sun') === 'full_sun' ? 'selected' : ''}>Pleno Sol</option>
+                    <option value="partial_sun" ${(editingC?.sunExposure || 'partial_sun') === 'partial_sun' ? 'selected' : ''}>Semisombra</option>
+                    <option value="shade" ${editingC?.sunExposure === 'shade' ? 'selected' : ''}>Sombra</option>
                   </select>
                 </div>
               </div>
 
               <label class="form-checkbox-row">
-                <input type="checkbox" id="check-container-covered" checked />
-                <span><strong>Bajo techo:</strong> La lluvia exterior no la empapa directamente.</span>
+                <input type="checkbox" id="check-container-covered" ${editingC ? (editingC.isCovered ? 'checked' : '') : 'checked'} />
+                <span><strong>Bajo techo:</strong> Protegida de la lluvia exterior directa.</span>
               </label>
 
               <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.25rem;">
-                <button type="submit" class="btn btn-primary btn-sm">➕ Guardar Jardinera</button>
+                ${editingC ? `<button type="button" class="btn btn-sm" id="btn-cancel-edit-container">Cancelar Edición</button>` : ''}
+                <button type="submit" class="btn btn-primary btn-sm">
+                  ${editingC ? '💾 Guardar Cambios' : '➕ Guardar Jardinera'}
+                </button>
               </div>
             </form>
           </div>
@@ -2411,43 +2694,70 @@ class HidroBalconApp {
 
     document.getElementById('btn-close-containers-modal')?.addEventListener('click', () => { container.innerHTML = ''; });
     document.getElementById('btn-close-containers-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
+    document.getElementById('btn-cancel-edit-container')?.addEventListener('click', () => { this.openContainersModal(); });
 
-    // Cálculo automático de litros en vivo según dimensiones
-    const dimL = document.getElementById('input-dim-length');
-    const dimW = document.getElementById('input-dim-width');
-    const dimD = document.getElementById('input-dim-depth');
+    // Switch de Forma geométrica en Jardinera
+    const shapeInput = document.getElementById('input-container-shape');
+    const btnRect = document.getElementById('btn-c-shape-rect');
+    const btnRound = document.getElementById('btn-c-shape-round');
+    const dimsRect = document.getElementById('c-dims-rect');
+    const dimsRound = document.getElementById('c-dims-round');
     const litersInput = document.getElementById('input-container-liters');
-    const badge = document.getElementById('dimensions-calc-badge');
+    const badgeRect = document.getElementById('c-dims-badge-rect');
+    const badgeRound = document.getElementById('c-dims-badge-round');
 
     const updateCalculatedLiters = () => {
-      const l = parseFloat(dimL?.value || 0);
-      const w = parseFloat(dimW?.value || 0);
-      const d = parseFloat(dimD?.value || 0);
-      if (l > 0 && w > 0 && d > 0) {
-        const calculatedLiters = Math.round(((l * w * d) / 1000) * 10) / 10;
-        if (litersInput) litersInput.value = calculatedLiters;
-        if (badge) badge.innerText = `📐 Calculado: ~${calculatedLiters} L`;
+      const isRound = shapeInput?.value === 'round';
+      if (isRound) {
+        const diam = parseFloat(document.getElementById('input-c-diameter')?.value || 0);
+        const h = parseFloat(document.getElementById('input-c-height')?.value || 0);
+        if (diam > 0 && h > 0) {
+          const r = diam / 2;
+          const calculatedLiters = Math.round((Math.PI * Math.pow(r, 2) * h / 1000) * 10) / 10;
+          if (litersInput) litersInput.value = calculatedLiters;
+          if (badgeRound) badgeRound.innerText = `📐 Calculado: ~${calculatedLiters} L`;
+        }
+      } else {
+        const l = parseFloat(document.getElementById('input-c-length')?.value || 0);
+        const w = parseFloat(document.getElementById('input-c-width')?.value || 0);
+        const d = parseFloat(document.getElementById('input-c-depth')?.value || 0);
+        if (l > 0 && w > 0 && d > 0) {
+          const calculatedLiters = Math.round(((l * w * d) / 1000) * 10) / 10;
+          if (litersInput) litersInput.value = calculatedLiters;
+          if (badgeRect) badgeRect.innerText = `📐 Calculado: ~${calculatedLiters} L`;
+        }
       }
     };
 
-    dimL?.addEventListener('input', updateCalculatedLiters);
-    dimW?.addEventListener('input', updateCalculatedLiters);
-    dimD?.addEventListener('input', updateCalculatedLiters);
+    btnRect?.addEventListener('click', () => {
+      btnRect.classList.add('active');
+      btnRound?.classList.remove('active');
+      if (shapeInput) shapeInput.value = 'rectangular';
+      if (dimsRect) dimsRect.style.display = 'flex';
+      if (dimsRound) dimsRound.style.display = 'none';
+      updateCalculatedLiters();
+    });
 
-    // Botones para añadir planta directa a la jardinera
-    document.querySelectorAll('.btn-add-plant-to-container').forEach(btn => {
+    btnRound?.addEventListener('click', () => {
+      btnRound.classList.add('active');
+      btnRect?.classList.remove('active');
+      if (shapeInput) shapeInput.value = 'round';
+      if (dimsRound) dimsRound.style.display = 'flex';
+      if (dimsRect) dimsRect.style.display = 'none';
+      updateCalculatedLiters();
+    });
+
+    document.getElementById('input-c-length')?.addEventListener('input', updateCalculatedLiters);
+    document.getElementById('input-c-width')?.addEventListener('input', updateCalculatedLiters);
+    document.getElementById('input-c-depth')?.addEventListener('input', updateCalculatedLiters);
+    document.getElementById('input-c-diameter')?.addEventListener('input', updateCalculatedLiters);
+    document.getElementById('input-c-height')?.addEventListener('input', updateCalculatedLiters);
+
+    // Botones para editar jardinera
+    document.querySelectorAll('.btn-edit-container').forEach(btn => {
       btn.addEventListener('click', () => {
-        const cId = btn.dataset.containerId;
-        container.innerHTML = '';
-        this.openPotModal();
-        // Prefijar el selector de jardinera
-        setTimeout(() => {
-          const sel = document.getElementById('select-container-parent');
-          if (sel) {
-            sel.value = cId;
-            sel.dispatchEvent(new Event('change'));
-          }
-        }, 50);
+        const id = btn.dataset.id;
+        this.openContainersModal(id);
       });
     });
 
@@ -2459,35 +2769,77 @@ class HidroBalconApp {
         this.showToast('Planta desvinculada de la jardinera', 'info');
         await this.refreshData();
         this.render();
-        this.openContainersModal();
+        this.openContainersModal(editContainerId);
       });
     });
 
     document.getElementById('new-container-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const editId = document.getElementById('input-edit-container-id')?.value;
       const name = document.getElementById('input-container-name').value.trim();
       const zoneId = document.getElementById('select-container-zone')?.value || null;
-      const length = parseFloat(document.getElementById('input-dim-length')?.value || 0) || null;
-      const width = parseFloat(document.getElementById('input-dim-width')?.value || 0) || null;
-      const depth = parseFloat(document.getElementById('input-dim-depth')?.value || 0) || null;
+      const shape = document.getElementById('input-container-shape')?.value || 'rectangular';
       const totalLiters = parseFloat(document.getElementById('input-container-liters').value || '40');
       const sections = parseInt(document.getElementById('input-container-sections').value || '3', 10);
       const material = document.getElementById('select-container-material').value;
       const sunExposure = document.getElementById('select-container-sun').value;
       const isCovered = document.getElementById('check-container-covered').checked;
 
-      db.addContainer({
-        name,
-        zoneId,
-        dimensions: (length && width && depth) ? { length, width, depth } : null,
-        totalLiters,
-        sections,
-        material,
-        sunExposure,
-        isCovered
-      });
+      let dimensions = null;
+      if (shape === 'round') {
+        const diameter = parseFloat(document.getElementById('input-c-diameter')?.value || 0) || null;
+        const height = parseFloat(document.getElementById('input-c-height')?.value || 0) || null;
+        if (diameter && height) dimensions = { diameter, height };
+      } else {
+        const length = parseFloat(document.getElementById('input-c-length')?.value || 0) || null;
+        const width = parseFloat(document.getElementById('input-c-width')?.value || 0) || null;
+        const depth = parseFloat(document.getElementById('input-c-depth')?.value || 0) || null;
+        if (length && width && depth) dimensions = { length, width, depth };
+      }
 
-      this.showToast(`¡Jardinera "${name}" creada con éxito! 🪴`, 'success');
+      if (editId) {
+        // Actualizar jardinera existente
+        db.updateContainer(editId, {
+          name,
+          zoneId,
+          shape,
+          dimensions,
+          totalLiters,
+          sections,
+          material,
+          sunExposure,
+          isCovered
+        });
+
+        // PROPAGACIÓN RECURSIVA: Actualizar las plantas hijas alojadas en esta jardinera
+        const allPots = db.getPots();
+        let updatedCount = 0;
+        allPots.forEach(p => {
+          if (p.containerId === editId) {
+            db.updatePot(p.id, {
+              zoneId: zoneId || null,
+              isCovered: isCovered
+            });
+            updatedCount++;
+          }
+        });
+
+        this.showToast(`Jardinera "${name}" actualizada (propagado a ${updatedCount} plantas) 🪴`, 'success');
+      } else {
+        db.addContainer({
+          name,
+          zoneId,
+          shape,
+          dimensions,
+          totalLiters,
+          sections,
+          material,
+          sunExposure,
+          isCovered
+        });
+        this.showToast(`¡Jardinera "${name}" creada con éxito! 🪴`, 'success');
+      }
+
       await this.refreshData();
       this.render();
       this.openContainersModal();
@@ -2509,13 +2861,14 @@ class HidroBalconApp {
 
   // ================= MODAL DE GESTIÓN DE ZONAS ("CONTENEDOR DE CONTENEDORES") ================= //
 
-  openZonesModal() {
+  openZonesModal(editZoneId = null) {
     const container = document.getElementById('modal-container');
     if (!container) return;
 
     const zones = db.getZones();
     const containers = db.getContainers();
     const pots = db.getPots();
+    const editingZ = editZoneId ? zones.find(z => z.id === editZoneId) : null;
 
     container.innerHTML = `
       <div class="modal-overlay active" id="zones-modal">
@@ -2527,7 +2880,7 @@ class HidroBalconApp {
 
           <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4;">
             Las <strong>Zonas</strong> actúan como "contenedor de contenedores" (ej: Balcón Principal Sur, Rincón Este con sombra de edificio).
-            Calculan automáticamente las horas reales de sol según la orientación cardinal y los obstáculos/sombras de edificios.
+            Calculan automáticamente las horas reales de sol según la orientación cardinal (8 rumbos), los obstáculos y la época del año.
           </p>
 
           <!-- LISTA DE ZONAS -->
@@ -2539,7 +2892,7 @@ class HidroBalconApp {
               const shd = SHADE_FACTORS[z.shadow] || SHADE_FACTORS.none;
 
               return `
-                <div class="zone-card" id="zone-card-${z.id}">
+                <div class="zone-card" id="zone-card-${z.id}" style="${editingZ?.id === z.id ? 'border-color:var(--primary-light); background:rgba(16,185,129,0.06);' : ''}">
                   <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                     <div>
                       <strong style="color:#ffffff; font-size:0.95rem;">🧭 ${z.name}</strong>
@@ -2547,7 +2900,10 @@ class HidroBalconApp {
                         Orientación: <strong>${ori.label.split('(')[0]}</strong> • Sombra: <strong>${shd.label.split('(')[0]}</strong> • ${z.isCovered ? 'Bajo techo' : 'Cielo abierto'}
                       </div>
                     </div>
-                    <button class="btn btn-sm btn-delete-zone" data-id="${z.id}" title="Eliminar zona">🗑️</button>
+                    <div style="display:flex; gap:0.4rem;">
+                      <button class="btn btn-sm btn-edit-zone" data-id="${z.id}" title="Editar zona">✏️</button>
+                      <button class="btn btn-sm btn-delete-zone" data-id="${z.id}" title="Eliminar zona">🗑️</button>
+                    </div>
                   </div>
 
                   ${z.notes ? `<div style="font-size:0.75rem; color:#cbd5e1; font-style:italic;">"${z.notes}"</div>` : ''}
@@ -2565,21 +2921,25 @@ class HidroBalconApp {
             `}
           </div>
 
-          <!-- FORMULARIO NUEVA ZONA -->
+          <!-- FORMULARIO NUEVA / EDITAR ZONA -->
           <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.85rem;">
-            <strong style="font-size:0.85rem; color:#ffffff; display:block; margin-bottom:0.6rem;">➕ Crear Nueva Zona de Terraza / Balcón:</strong>
+            <strong style="font-size:0.85rem; color:#ffffff; display:block; margin-bottom:0.6rem;">
+              ${editingZ ? `✏️ Editando Zona "${editingZ.name}":` : '➕ Crear Nueva Zona de Terraza / Balcón:'}
+            </strong>
             <form id="new-zone-form" style="display:flex; flex-direction:column; gap:0.75rem;">
+              <input type="hidden" id="input-edit-zone-id" value="${editingZ?.id || ''}" />
+
               <div class="form-group">
                 <label class="form-label" for="input-zone-name">Nombre de la Zona:</label>
-                <input type="text" id="input-zone-name" class="form-input" required placeholder="Ej: Rincón Sureste - Sombra de Edificio" />
+                <input type="text" id="input-zone-name" class="form-input" required placeholder="Ej: Rincón Sureste - Sombra de Edificio" value="${editingZ?.name || ''}" />
               </div>
 
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
                 <div class="form-group">
-                  <label class="form-label" for="select-zone-orientation">Orientación Cardinal:</label>
+                  <label class="form-label" for="select-zone-orientation">Orientación Cardinal (8 rumbos):</label>
                   <select id="select-zone-orientation" class="form-select">
                     ${Object.values(BALCONY_ORIENTATIONS).map(o => `
-                      <option value="${o.id}">${o.label}</option>
+                      <option value="${o.id}" ${(editingZ?.orientation || 'south') === o.id ? 'selected' : ''}>${o.label}</option>
                     `).join('')}
                   </select>
                 </div>
@@ -2587,19 +2947,22 @@ class HidroBalconApp {
                   <label class="form-label" for="select-zone-shadow">Obstáculos / Sombras de Edificios:</label>
                   <select id="select-zone-shadow" class="form-select">
                     ${Object.values(SHADE_FACTORS).map(s => `
-                      <option value="${s.id}">${s.label}</option>
+                      <option value="${s.id}" ${(editingZ?.shadow || 'none') === s.id ? 'selected' : ''}>${s.label}</option>
                     `).join('')}
                   </select>
                 </div>
               </div>
 
               <label class="form-checkbox-row">
-                <input type="checkbox" id="check-zone-covered" />
+                <input type="checkbox" id="check-zone-covered" ${editingZ ? (editingZ.isCovered ? 'checked' : '') : ''} />
                 <span><strong>Zona Techada / Porche:</strong> Protegida de lluvia directa por alero o balcón superior.</span>
               </label>
 
               <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.25rem;">
-                <button type="submit" class="btn btn-primary btn-sm">➕ Guardar Zona</button>
+                ${editingZ ? `<button type="button" class="btn btn-sm" id="btn-cancel-edit-zone">Cancelar Edición</button>` : ''}
+                <button type="submit" class="btn btn-primary btn-sm">
+                  ${editingZ ? '💾 Guardar Cambios' : '➕ Guardar Zona'}
+                </button>
               </div>
             </form>
           </div>
@@ -2613,16 +2976,31 @@ class HidroBalconApp {
 
     document.getElementById('btn-close-zones-modal')?.addEventListener('click', () => { container.innerHTML = ''; });
     document.getElementById('btn-close-zones-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
+    document.getElementById('btn-cancel-edit-zone')?.addEventListener('click', () => { this.openZonesModal(); });
+
+    document.querySelectorAll('.btn-edit-zone').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        this.openZonesModal(id);
+      });
+    });
 
     document.getElementById('new-zone-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const editId = document.getElementById('input-edit-zone-id')?.value;
       const name = document.getElementById('input-zone-name').value.trim();
       const orientation = document.getElementById('select-zone-orientation').value;
       const shadow = document.getElementById('select-zone-shadow').value;
       const isCovered = document.getElementById('check-zone-covered').checked;
 
-      db.addZone({ name, orientation, shadow, isCovered });
-      this.showToast(`Zona "${name}" creada 🧭`, 'success');
+      if (editId) {
+        db.updateZone(editId, { name, orientation, shadow, isCovered });
+        this.showToast(`Zona "${name}" actualizada 🧭`, 'success');
+      } else {
+        db.addZone({ name, orientation, shadow, isCovered });
+        this.showToast(`Zona "${name}" creada 🧭`, 'success');
+      }
+
       await this.refreshData();
       this.render();
       this.openZonesModal();
@@ -2652,34 +3030,98 @@ class HidroBalconApp {
     const pots = db.getPots();
     const potMap = new Map(pots.map(p => [p.id, p]));
 
+    const zones = db.getZones();
+    const containers = db.getContainers();
+
+    let activeFilter = 'all'; // 'all' | 'zone_{id}' | 'has_note' | 'initial'
+
+    const renderGalleryGrid = () => {
+      const filtered = allPhotos.filter(photo => {
+        const pot = potMap.get(photo.potId);
+        if (activeFilter === 'all') return true;
+        if (activeFilter === 'has_note') return Boolean(photo.note && photo.note.trim());
+        if (activeFilter === 'initial') return Boolean(photo.isInitial);
+        if (activeFilter.startsWith('zone_')) {
+          const targetZoneId = activeFilter.replace('zone_', '');
+          if (!pot) return false;
+          if (pot.zoneId === targetZoneId) return true;
+          if (pot.containerId) {
+            const c = containers.find(cnt => cnt.id === pot.containerId);
+            return c && c.zoneId === targetZoneId;
+          }
+          return false;
+        }
+        return true;
+      });
+
+      const gridEl = document.getElementById('global-gallery-grid-content');
+      if (!gridEl) return;
+
+      if (filtered.length === 0) {
+        gridEl.innerHTML = `
+          <div style="grid-column:1/-1; text-align:center; padding:2.5rem; color:var(--text-muted); font-size:0.85rem;">
+            No hay fotografías que coincidan con este filtro.
+          </div>
+        `;
+        return;
+      }
+
+      gridEl.innerHTML = filtered.map(photo => {
+        const pot = potMap.get(photo.potId) || { name: 'Planta' };
+        const dStr = new Date(photo.date).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' });
+        return `
+          <div class="global-gallery-item btn-view-full-photo" data-img="${photo.dataUrl}" data-title="${pot.name} (${dStr})" title="${pot.name} - ${photo.note || dStr}">
+            <img src="${photo.dataUrl}" alt="${pot.name}" loading="lazy" />
+            <div class="global-gallery-badge">🌿 ${pot.name}</div>
+          </div>
+        `;
+      }).join('');
+
+      gridEl.querySelectorAll('.btn-view-full-photo').forEach(elem => {
+        elem.addEventListener('click', () => {
+          const imgUrl = elem.dataset.img;
+          const title = elem.dataset.title;
+          if (imgUrl) {
+            const w = window.open('');
+            if (w) {
+              w.document.write(`
+                <html>
+                  <head><title>${title || 'Foto'}</title></head>
+                  <body style="margin:0; background:#0f172a; display:flex; align-items:center; justify-content:center; height:100vh;">
+                    <img src="${imgUrl}" style="max-width:95vw; max-height:95vh; object-fit:contain; border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.7);" />
+                  </body>
+                </html>
+              `);
+            }
+          }
+        });
+      });
+    };
+
     container.innerHTML = `
       <div class="modal-overlay active" id="global-gallery-modal">
-        <div class="modal-content" style="max-width: 720px;">
+        <div class="modal-content" style="max-width: 760px;">
           <div class="modal-header">
             <h3 class="modal-title">🖼️ Galería y Evolución General (${allPhotos.length} fotos)</h3>
             <button class="modal-close" id="btn-close-global-gallery">&times;</button>
           </div>
 
-          <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4;">
-            Collage cronológico de todas las fotografías tomadas en el balcón. Toca cualquier foto para ampliarla o para ver la ficha de la planta.
+          <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4; margin-bottom:0.5rem;">
+            Collage de fotos de tu terraza. Filtra por zona o tipo de toma para estudiar la evolución botánica:
           </p>
 
-          <div class="global-gallery-grid">
-            ${allPhotos.length > 0 ? allPhotos.map(photo => {
-              const pot = potMap.get(photo.potId) || { name: 'Planta' };
-              const dStr = new Date(photo.date).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' });
-              return `
-                <div class="global-gallery-item btn-view-full-photo" data-img="${photo.dataUrl}" data-title="${pot.name} (${dStr})" title="${pot.name} - ${photo.note || dStr}">
-                  <img src="${photo.dataUrl}" alt="${pot.name}" loading="lazy" />
-                  <div class="global-gallery-badge">🌿 ${pot.name}</div>
-                </div>
-              `;
-            }).join('') : `
-              <div style="grid-column:1/-1; text-align:center; padding:3rem; color:var(--text-muted); font-size:0.85rem;">
-                No hay fotografías guardadas todavía en la base de datos.<br>
-                Toma fotos desde la tarjeta de cualquier maceta para ver aquí el collage de evolución.
-              </div>
-            `}
+          <!-- FILTER CHIPS -->
+          <div class="gallery-filter-chips" id="gallery-chips-wrap">
+            <button type="button" class="gallery-chip active" data-filter="all">Todas (${allPhotos.length})</button>
+            ${zones.map(z => `
+              <button type="button" class="gallery-chip" data-filter="zone_${z.id}">🧭 ${z.name}</button>
+            `).join('')}
+            <button type="button" class="gallery-chip" data-filter="has_note">📝 Con Notas</button>
+            <button type="button" class="gallery-chip" data-filter="initial">🌱 Foto Inicial</button>
+          </div>
+
+          <div class="global-gallery-grid" id="global-gallery-grid-content">
+            <!-- Grid dinámico renderizado con filtro -->
           </div>
 
           <div style="display:flex; justify-content:flex-end; margin-top:0.85rem;">
@@ -2689,26 +3131,17 @@ class HidroBalconApp {
       </div>
     `;
 
+    renderGalleryGrid();
+
     document.getElementById('btn-close-global-gallery')?.addEventListener('click', () => { container.innerHTML = ''; });
     document.getElementById('btn-close-global-gallery-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
 
-    document.querySelectorAll('.btn-view-full-photo').forEach(elem => {
-      elem.addEventListener('click', () => {
-        const imgUrl = elem.dataset.img;
-        const title = elem.dataset.title;
-        if (imgUrl) {
-          const w = window.open('');
-          if (w) {
-            w.document.write(`
-              <html>
-                <head><title>${title || 'Foto'}</title></head>
-                <body style="margin:0; background:#0f172a; display:flex; align-items:center; justify-content:center; height:100vh;">
-                  <img src="${imgUrl}" style="max-width:95vw; max-height:95vh; object-fit:contain; border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.7);" />
-                </body>
-              </html>
-            `);
-          }
-        }
+    document.querySelectorAll('.gallery-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        document.querySelectorAll('.gallery-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        activeFilter = chip.dataset.filter;
+        renderGalleryGrid();
       });
     });
   }
@@ -2759,7 +3192,10 @@ class HidroBalconApp {
             </ul>
           </div>
 
-          <div style="display:flex; justify-content:flex-end; margin-top:0.85rem;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.85rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem;">
+            <a href="https://es.wikipedia.org/wiki/${encodeURIComponent(plant.scientificName || plant.name)}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline" style="text-decoration:none; color:#60a5fa; display:inline-flex; align-items:center; gap:0.35rem;">
+              🌐 Ver en Wikipedia ↗
+            </a>
             <button type="button" class="btn" id="btn-close-species-footer">Cerrar</button>
           </div>
         </div>
@@ -2768,6 +3204,103 @@ class HidroBalconApp {
 
     document.getElementById('btn-close-species-modal')?.addEventListener('click', () => { container.innerHTML = ''; });
     document.getElementById('btn-close-species-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
+  }
+
+  // ================= MODAL CONFIGURACIÓN Y PARÁMETROS AGRONÓMICOS ================= //
+
+  openConfigModal() {
+    const container = document.getElementById('modal-container');
+    if (!container) return;
+
+    const seasonal = getSeasonalDaylightFactor(new Date());
+    const dateFormatted = new Date().toLocaleDateString('es-ES', { month: 'long', day: 'numeric' });
+
+    container.innerHTML = `
+      <div class="modal-overlay active" id="config-params-modal">
+        <div class="modal-content" style="max-width: 680px; max-height: 88vh; overflow-y: auto;">
+          <div class="modal-header">
+            <h3 class="modal-title">⚙️ Parámetros Agronómicos y Configuración</h3>
+            <button class="modal-close" id="btn-close-config-modal">&times;</button>
+          </div>
+
+          <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4;">
+            Transparencia de los algoritmos agronómicos del motor (JS/Wasm): factores de cálculo solar, coeficientes de evaporación por material, volumen de macetas y protección de heladas.
+          </p>
+
+          <!-- 1. FACTOR ESTACIONAL SOLAR ACTUAL -->
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem; margin-bottom:0.75rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <strong style="color:#ffffff; font-size:0.85rem;">☀️ Variación Estacional Solar (${dateFormatted}):</strong>
+              <span style="font-size:0.75rem; color:#38bdf8; font-weight:700; background:rgba(56,189,248,0.15); padding:0.15rem 0.5rem; border-radius:var(--radius-full);">
+                ${seasonal.daylightHoursOffset >= 0 ? `+${seasonal.daylightHoursOffset}h sol` : `${seasonal.daylightHoursOffset}h sol`}
+              </span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-top:0.45rem; font-size:0.75rem; color:var(--text-muted);">
+              <div>Offset solar diurno: <strong>${seasonal.daylightHoursOffset > 0 ? '+' : ''}${seasonal.daylightHoursOffset} horas</strong></div>
+              <div>Multiplicador evaporación: <strong>${seasonal.evaporationMultiplier}×</strong></div>
+            </div>
+            <span style="display:block; font-size:0.7rem; color:#94a3b8; margin-top:0.35rem;">
+              En invierno los días son cortos (-1.2h sol) con baja evaporación (0.85×); en verano el sol es cenital (+1.2h) y acelera la transpiración (1.20×).
+            </span>
+          </div>
+
+          <!-- 2. ORIENTACIONES CARDINALES (8 DIRECCIONES) -->
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem; margin-bottom:0.75rem;">
+            <strong style="color:#ffffff; font-size:0.85rem; display:block; margin-bottom:0.4rem;">🧭 Horas de Sol y Factor por Orientación (8 Rumbos):</strong>
+            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:0.4rem; font-size:0.72rem;">
+              ${Object.values(BALCONY_ORIENTATIONS).map(o => `
+                <div style="background:rgba(0,0,0,0.25); padding:0.4rem; border-radius:4px; border:1px solid rgba(255,255,255,0.05);">
+                  <div style="font-weight:700; color:#cbd5e1;">${o.label}</div>
+                  <div style="color:#94a3b8;">${o.baseSunHours}h sol base</div>
+                  <div style="color:#38bdf8;">Secado: ${o.dryingFactor}×</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- 3. INERCIA HÍDRICA POR VOLUMEN Y MATERIAL -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; margin-bottom:0.75rem;">
+            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.65rem; font-size:0.72rem;">
+              <strong style="color:#ffffff; display:block; margin-bottom:0.35rem;">🪴 Retención por Material:</strong>
+              ${Object.values(POT_MATERIALS).map(m => `
+                <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+                  <span>${m.label.split('(')[0]}</span>
+                  <span style="color:#34d399; font-weight:700;">${m.dryingMultiplier}× secado</span>
+                </div>
+              `).join('')}
+            </div>
+
+            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.65rem; font-size:0.72rem;">
+              <strong style="color:#ffffff; display:block; margin-bottom:0.35rem;">🧊 Factor por Volumen de Sustrato:</strong>
+              ${Object.values(POT_SIZES).map(s => `
+                <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
+                  <span>${s.label.split('(')[0]}</span>
+                  <span style="color:#38bdf8; font-weight:700;">${s.dryingMultiplier}× inercia</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- 4. UMBRALES DE RIESGO CLIMÁTICO Y HELADAS -->
+          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.65rem; font-size:0.72rem; margin-bottom:0.75rem;">
+            <strong style="color:#ffffff; display:block; margin-bottom:0.35rem;">❄️ Umbrales de Seguridad Climática:</strong>
+            <ul style="padding-left:1.1rem; color:var(--text-muted); display:flex; flex-direction:column; gap:0.2rem; margin:0;">
+              <li><strong>Helada crítica (&le; 0°C):</strong> Bloqueo estricto de riego para prevenir congelación radicular.</li>
+              <li><strong>Alerta de helada preventiva (&le; 2°C):</strong> Suspender riegos salvo desecación extrema.</li>
+              <li><strong>Golpe de calor (&ge; 35°C):</strong> Riego prioritario a primera hora matinal o crepúsculo.</li>
+              <li><strong>Lluvia exterior (&ge; 5mm):</strong> Pausa de riego automático en macetas de cielo abierto.</li>
+            </ul>
+          </div>
+
+          <div style="display:flex; justify-content:flex-end; margin-top:0.85rem;">
+            <button type="button" class="btn" id="btn-close-config-footer">Entendido / Cerrar</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('btn-close-config-modal')?.addEventListener('click', () => { container.innerHTML = ''; });
+    document.getElementById('btn-close-config-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
   }
 
   // ================= MODALS: TIMER, POT, CITY, APK ================= //
@@ -2990,15 +3523,21 @@ class HidroBalconApp {
 
             <input type="hidden" id="input-species-id" value="${pot.speciesId || ''}" />
             <input type="hidden" id="input-import-source" value="${pot.importSource || ''}" />
+            <input type="hidden" id="input-import-url" value="${pot.importUrl || ''}" />
 
             <div class="form-group">
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <label class="form-label" for="input-pot-name">Nombre Propio / Identificador:</label>
-                <span id="badge-species-linked" style="${pot.speciesId ? 'display:inline-flex;' : 'display:none;'}" class="plant-bd-badge">
-                  📖 Vinculada a especie en BD
-                </span>
+              <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.4rem;">
+                <label class="form-label" for="input-pot-name" style="margin:0;">Nombre Propio / Identificador:</label>
+                <div style="display:flex; align-items:center; gap:0.4rem;">
+                  <span id="badge-species-linked" style="${pot.speciesId ? 'display:inline-flex;' : 'display:none;'}" class="plant-bd-badge">
+                    📖 Vinculada a especie en BD
+                  </span>
+                  <a id="link-original-source" href="${pot.importUrl || (pot.speciesId ? `https://es.wikipedia.org/wiki/${encodeURIComponent(plantApiService.getCatalogPlantById(pot.speciesId)?.scientificName || pot.name)}` : '#')}" target="_blank" rel="noopener noreferrer" class="plant-bd-badge" style="${(pot.importUrl || pot.speciesId) ? 'display:inline-flex;' : 'display:none;'} text-decoration:none; color:#60a5fa; background:rgba(96,165,250,0.15); border-color:rgba(96,165,250,0.3);" title="Ver ficha original en Wikipedia / OpenFarm">
+                    🌐 Ver ficha original ↗
+                  </a>
+                </div>
               </div>
-              <input type="text" id="input-pot-name" class="form-input" required placeholder="Ej: Mi Albahaca de Génova, Tomate del Abuelo..." value="${pot.name || ''}" />
+              <input type="text" id="input-pot-name" class="form-input" required placeholder="Ej: Mi Albahaca de Génova, Tomate del Abuelo..." value="${pot.name || ''}" style="margin-top:0.35rem;" />
             </div>
 
             <!-- FOTO DE LA MACETA -->
@@ -3029,31 +3568,10 @@ class HidroBalconApp {
               </select>
             </div>
 
-            <!-- SELECT JARDINERA PADRE -->
-            <div class="form-group">
-              <div style="display:flex; justify-content:space-between; align-items:center;">
-                <label class="form-label" for="select-container-parent">🪴 Jardinera Corrida Compartida (opcional):</label>
-                <button type="button" class="btn btn-sm" id="btn-quick-manage-containers" style="font-size:0.7rem; padding:0.15rem 0.45rem;">
-                  ⚙️ Gestionar Jardineras
-                </button>
-              </div>
-              <select id="select-container-parent" class="form-select">
-                <option value="">-- Maceta individual independiente --</option>
-                ${(this.containers || db.getContainers()).map(c => `
-                  <option value="${c.id}" ${c.id === pot.containerId ? 'selected' : ''}>
-                    🪴 ${c.name} (${c.totalLiters}L, ${c.sections} secciones, ${c.material})
-                  </option>
-                `).join('')}
-              </select>
-              <span style="font-size:0.7rem; color:var(--text-muted);">
-                Si eliges una jardinera, la planta compartirá el sustrato, la inercia térmica y el material de la jardinera.
-              </span>
-            </div>
-
-            <!-- ZONA DE LA TERRAZA (ORIENTACIÓN & SOMBRAS) -->
+            <!-- ZONA DE LA TERRAZA (PRIMERO: ORIENTACIÓN & MICROCLIMA) -->
             <div class="form-group" id="group-pot-zone">
               <div style="display:flex; justify-content:space-between; align-items:center;">
-                <label class="form-label" for="select-pot-zone">🧭 Zona de la Terraza / Microclima:</label>
+                <label class="form-label" for="select-pot-zone">1. 🧭 Zona de la Terraza / Microclima:</label>
                 <button type="button" class="btn btn-sm" id="btn-quick-manage-zones" style="font-size:0.7rem; padding:0.15rem 0.45rem;">
                   ⚙️ Gestionar Zonas
                 </button>
@@ -3066,6 +3584,31 @@ class HidroBalconApp {
                   </option>
                 `).join('')}
               </select>
+            </div>
+
+            <!-- SELECT JARDINERA PADRE (FILTRADA POR ZONA SELECCIONADA) -->
+            <div class="form-group">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <label class="form-label" for="select-container-parent">2. 🪴 Jardinera Corrida Compartida (opcional):</label>
+                <button type="button" class="btn btn-sm" id="btn-quick-manage-containers" style="font-size:0.7rem; padding:0.15rem 0.45rem;">
+                  ⚙️ Gestionar Jardineras
+                </button>
+              </div>
+              <select id="select-container-parent" class="form-select">
+                <option value="">-- Maceta individual independiente --</option>
+                ${(this.containers || db.getContainers()).map(c => {
+                  const cZone = (this.zones || db.getZones()).find(z => z.id === c.zoneId);
+                  const zoneTag = cZone ? ` [${cZone.name.split('(')[0].trim()}]` : '';
+                  return `
+                    <option value="${c.id}" data-zone="${c.zoneId || ''}" ${c.id === pot.containerId ? 'selected' : ''}>
+                      🪴 ${c.name}${zoneTag} (${c.totalLiters}L, ${c.sections} secciones)
+                    </option>
+                  `;
+                }).join('')}
+              </select>
+              <span style="font-size:0.7rem; color:var(--text-muted);">
+                Si eliges una jardinera, la planta compartirá el sustrato, la inercia térmica y el material de la jardinera.
+              </span>
             </div>
 
             <!-- CAMPOS PROPIOS DE MACETA INDIVIDUAL (SE OCULTAN SI SE ELIGE JARDINERA PREVIA) -->
@@ -3265,14 +3808,58 @@ class HidroBalconApp {
     });
 
     // Si se selecciona jardinera previa, ocultar selector de tipo y dimensiones de maceta individual
+    const selectZone = document.getElementById('select-pot-zone');
     const selectContainer = document.getElementById('select-container-parent');
     const individualFields = document.getElementById('individual-pot-fields');
+
+    const filterContainersByZone = (selectedZoneId) => {
+      if (!selectContainer) return;
+      const options = Array.from(selectContainer.querySelectorAll('option'));
+      options.forEach(opt => {
+        if (!opt.value) {
+          opt.hidden = false;
+          return;
+        }
+        const optZone = opt.dataset.zone;
+        if (!selectedZoneId) {
+          opt.hidden = false;
+        } else {
+          opt.hidden = (optZone && optZone !== selectedZoneId);
+        }
+      });
+    };
+
+    selectZone?.addEventListener('change', () => {
+      const selectedZoneId = selectZone.value;
+      filterContainersByZone(selectedZoneId);
+      // Si la jardinera seleccionada actualmente no pertenece a la nueva zona, resetearla
+      if (selectContainer && selectContainer.value) {
+        const currentSelectedOpt = selectContainer.querySelector(`option[value="${selectContainer.value}"]`);
+        if (currentSelectedOpt && currentSelectedOpt.hidden) {
+          selectContainer.value = '';
+          if (individualFields) individualFields.style.display = 'flex';
+        }
+      }
+    });
+
     selectContainer?.addEventListener('change', () => {
       const hasContainer = Boolean(selectContainer.value);
       if (individualFields) {
         individualFields.style.display = hasContainer ? 'none' : 'flex';
       }
+      // Si se elige jardinera con zona definida, autoseleccionar la zona correspondiente
+      if (hasContainer) {
+        const chosenContainer = (this.containers || db.getContainers()).find(c => c.id === selectContainer.value);
+        if (chosenContainer && chosenContainer.zoneId && selectZone) {
+          selectZone.value = chosenContainer.zoneId;
+        }
+      }
     });
+
+    // Filtro inicial si ya viene con zona
+    if (selectZone?.value) {
+      filterContainersByZone(selectZone.value);
+    }
 
     document.getElementById('btn-quick-manage-zones')?.addEventListener('click', () => {
       this.openZonesModal();
@@ -3290,6 +3877,9 @@ class HidroBalconApp {
       const sunSelect = document.getElementById('select-sun');
       const notesInput = document.getElementById('input-notes');
 
+      const importUrlInput = document.getElementById('input-import-url');
+      const linkOriginal = document.getElementById('link-original-source');
+
       if (nameInput) {
         nameInput.value = plant.name;
         nameInput.classList.remove('field-highlighted');
@@ -3297,9 +3887,16 @@ class HidroBalconApp {
         nameInput.classList.add('field-highlighted');
       }
 
+      const generatedUrl = plant.importUrl || (plant.scientificName ? `https://es.wikipedia.org/wiki/${encodeURIComponent(plant.scientificName)}` : null);
+
       if (speciesIdInput) speciesIdInput.value = plant.id || '';
-      if (importSourceInput) importSourceInput.value = plant.scientificName ? `Ficha ${plant.scientificName}` : 'Catálogo Botánico';
+      if (importSourceInput) importSourceInput.value = plant.importSource || (plant.scientificName ? `Ficha ${plant.scientificName}` : 'Catálogo Botánico');
+      if (importUrlInput) importUrlInput.value = generatedUrl || '';
       if (badgeSpecies) badgeSpecies.style.display = 'inline-flex';
+      if (linkOriginal && generatedUrl) {
+        linkOriginal.href = generatedUrl;
+        linkOriginal.style.display = 'inline-flex';
+      }
 
       if (plantTypeSelect && plant.plantType) {
         plantTypeSelect.value = plant.plantType;
@@ -3363,6 +3960,7 @@ class HidroBalconApp {
       const name = document.getElementById('input-pot-name').value.trim();
       const speciesId = document.getElementById('input-species-id')?.value || null;
       const importSource = document.getElementById('input-import-source')?.value || null;
+      const importUrl = document.getElementById('input-import-url')?.value || null;
       const containerId = document.getElementById('select-container-parent')?.value || null;
       const zoneId = document.getElementById('select-pot-zone')?.value || null;
       const plantType = document.getElementById('select-plant-type').value;
@@ -3396,6 +3994,7 @@ class HidroBalconApp {
           name,
           speciesId,
           importSource,
+          importUrl,
           containerId,
           zoneId,
           plantType,
@@ -3414,6 +4013,7 @@ class HidroBalconApp {
           name,
           speciesId,
           importSource,
+          importUrl,
           containerId,
           zoneId,
           plantType,
@@ -3608,7 +4208,9 @@ class HidroBalconApp {
                 defaultSize: item.inferredAgronomics.defaultSize,
                 defaultSun: item.inferredAgronomics.defaultSun,
                 description: item.extract,
-                thumbnail: item.thumbnail
+                thumbnail: item.thumbnail,
+                importUrl: item.pageUrl || (item.source === 'wikipedia' ? `https://es.wikipedia.org/wiki/${encodeURIComponent(item.title)}` : null),
+                importSource: item.sourceBadge || 'Importación Online'
               });
             }
           });

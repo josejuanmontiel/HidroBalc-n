@@ -151,6 +151,18 @@ export const BALCONY_ORIENTATIONS = {
     sunHoursBonus: 1.0,
     dryingMultiplier: 1.1
   },
+  northeast: {
+    id: 'northeast',
+    label: 'Noreste (Primer sol matinal, sombra el resto del día)',
+    sunHoursBonus: -0.8,
+    dryingMultiplier: 0.85
+  },
+  northwest: {
+    id: 'northwest',
+    label: 'Noroeste (Sombra matinal, sol tardío suave en verano)',
+    sunHoursBonus: -0.5,
+    dryingMultiplier: 0.88
+  },
   north: {
     id: 'north',
     label: 'Norte (Sin sol directo o muy poco, ambiente fresco)',
@@ -242,23 +254,52 @@ export const SUN_EXPOSURES = {
 };
 
 /**
- * Calcula las horas estimadas de sol y factor de secado por orientación y sombras
+ * Factor de ajuste estacional (época del año) en el hemisferio norte:
+ * En solsticio de verano (junio) hay ~15h de luz solar y sol cenital;
+ * en solsticio de invierno (diciembre) hay ~9h de luz y ángulo solar bajo.
  */
-export function calculateOrientationAndShadowFactor({ orientation = 'south', shadow = 'none', baseExposure = 'full_sun' } = {}) {
+export function getSeasonalDaylightFactor(date = new Date()) {
+  const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 1000 / 60 / 60 / 24);
+  // Pico en solsticio de verano (~día 172)
+  const angle = ((dayOfYear - 80) / 365) * 2 * Math.PI;
+  // Variación entre -1.2h (invierno) y +1.2h (verano) para la península ibérica
+  const seasonalSunHourOffset = Math.sin(angle) * 1.25;
+  // Multiplicador estacional de evaporación (0.85 en invierno a 1.20 en pleno verano)
+  const seasonalEvapMultiplier = 1.0 + (Math.sin(angle) * 0.15);
+  
+  const month = date.getMonth(); // 0 a 11
+  let seasonName = 'Primavera';
+  if (month >= 5 && month <= 7) seasonName = 'Verano';
+  else if (month >= 8 && month <= 10) seasonName = 'Otoño';
+  else if (month === 11 || month <= 1) seasonName = 'Invierno';
+
+  return {
+    seasonName,
+    seasonalSunHourOffset: Math.round(seasonalSunHourOffset * 10) / 10,
+    seasonalEvapMultiplier: Math.round(seasonalEvapMultiplier * 100) / 100
+  };
+}
+
+/**
+ * Calcula las horas estimadas de sol y factor de secado por orientación, sombras y época del año
+ */
+export function calculateOrientationAndShadowFactor({ orientation = 'south', shadow = 'none', baseExposure = 'full_sun', date = new Date() } = {}) {
   const ori = BALCONY_ORIENTATIONS[orientation] || BALCONY_ORIENTATIONS.south;
   const shd = SHADE_FACTORS[shadow] || SHADE_FACTORS.none;
   const sunExp = SUN_EXPOSURES[baseExposure] || SUN_EXPOSURES.partial_sun;
+  const seasonal = getSeasonalDaylightFactor(date);
 
-  // Horas teóricas de insolación directa diaria
-  const rawHours = sunExp.baseSunHours + ori.sunHoursBonus - shd.hoursReduction;
+  // Horas teóricas de insolación directa diaria moduladas por estación
+  const rawHours = sunExp.baseSunHours + ori.sunHoursBonus - shd.hoursReduction + seasonal.seasonalSunHourOffset;
   const estimatedSunHours = Math.max(0.5, Math.min(10.0, Math.round(rawHours * 10) / 10));
 
-  // Multiplicador compuesto por microclima de zona
-  const microclimateMultiplier = Math.round((ori.dryingMultiplier * shd.dryingMultiplier) * 100) / 100;
+  // Multiplicador compuesto por microclima de zona y estación
+  const microclimateMultiplier = Math.round((ori.dryingMultiplier * shd.dryingMultiplier * seasonal.seasonalEvapMultiplier) * 100) / 100;
 
   return {
     orientation: ori,
     shadow: shd,
+    seasonal,
     estimatedSunHours,
     microclimateMultiplier
   };
