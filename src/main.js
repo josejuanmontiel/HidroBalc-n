@@ -3256,14 +3256,14 @@ class HidroBalconApp {
             <!-- 1. FACTOR ESTACIONAL SOLAR ACTUAL -->
             <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem;">
               <div style="display:flex; justify-content:space-between; align-items:center;">
-                <strong style="color:#ffffff; font-size:0.85rem;">☀️ Variación Estacional Solar en Curso (${dateFormatted}):</strong>
+                <strong style="color:#ffffff; font-size:0.85rem;">☀️ Variación Estacional Solar en Curso (${seasonal.seasonName || 'Estación'} - ${dateFormatted}):</strong>
                 <span style="font-size:0.75rem; color:#38bdf8; font-weight:700; background:rgba(56,189,248,0.15); padding:0.15rem 0.5rem; border-radius:var(--radius-full);">
-                  ${seasonal.daylightHoursOffset >= 0 ? `+${seasonal.daylightHoursOffset}h sol` : `${seasonal.daylightHoursOffset}h sol`}
+                  ${(seasonal.seasonalSunHourOffset ?? seasonal.daylightHoursOffset ?? 0) >= 0 ? `+${seasonal.seasonalSunHourOffset ?? seasonal.daylightHoursOffset ?? 0}h sol` : `${seasonal.seasonalSunHourOffset ?? seasonal.daylightHoursOffset ?? 0}h sol`}
                 </span>
               </div>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-top:0.45rem; font-size:0.75rem; color:var(--text-muted);">
-                <div>Offset solar diurno: <strong>${seasonal.daylightHoursOffset > 0 ? '+' : ''}${seasonal.daylightHoursOffset} horas</strong></div>
-                <div>Multiplicador evaporación: <strong>${seasonal.evaporationMultiplier}×</strong></div>
+                <div>Offset solar diurno: <strong>${(seasonal.seasonalSunHourOffset ?? seasonal.daylightHoursOffset ?? 0) > 0 ? '+' : ''}${seasonal.seasonalSunHourOffset ?? seasonal.daylightHoursOffset ?? 0} horas</strong></div>
+                <div>Multiplicador evaporación: <strong>${seasonal.seasonalEvapMultiplier ?? seasonal.evaporationMultiplier ?? 1.0}×</strong></div>
               </div>
               <span style="display:block; font-size:0.7rem; color:#94a3b8; margin-top:0.35rem;">
                 En invierno los días son cortos (-1.2h sol) con baja evaporación (0.85×); en verano el sol cenital (+1.2h) acelera la transpiración (1.20×).

@@ -273,10 +273,16 @@ export function getSeasonalDaylightFactor(date = new Date()) {
   else if (month >= 8 && month <= 10) seasonName = 'Otoño';
   else if (month === 11 || month <= 1) seasonName = 'Invierno';
 
+  const sunOffset = Math.round(seasonalSunHourOffset * 10) / 10;
+  const evapMult = Math.round(seasonalEvapMultiplier * 100) / 100;
+
   return {
     seasonName,
-    seasonalSunHourOffset: Math.round(seasonalSunHourOffset * 10) / 10,
-    seasonalEvapMultiplier: Math.round(seasonalEvapMultiplier * 100) / 100
+    seasonalSunHourOffset: sunOffset,
+    seasonalEvapMultiplier: evapMult,
+    // Aliases para compatibilidad directa
+    daylightHoursOffset: sunOffset,
+    evaporationMultiplier: evapMult
   };
 }
 
