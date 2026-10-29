@@ -94,6 +94,7 @@ class HidroBalconApp {
     this.pots = db.getPots();
     this.containers = db.getContainers();
     this.zones = db.getZones();
+    this.settings = db.getSettings();
     this.weatherData = await weatherService.getForecast(forceWeather);
 
     // Cargar fotos de portada, fotos iniciales y calcular dosis con motor WebAssembly en Go
@@ -145,7 +146,7 @@ class HidroBalconApp {
       if (pot.containerId && !pot.container) {
         pot.container = (this.containers || db.getContainers()).find(c => c.id === pot.containerId) || null;
       }
-      const calculation = calculatePotWatering(pot, this.weatherData, now);
+      const calculation = calculatePotWatering(pot, this.weatherData, now, this.settings || {});
       return {
         ...pot,
         calc: calculation
@@ -821,6 +822,9 @@ class HidroBalconApp {
                     📖 Ficha BD
                   </button>
                 ` : ''}
+                <button type="button" class="plant-bd-badge btn-relink-species" data-id="${pot.id}" data-name="${pot.name}" style="background:rgba(147,197,253,0.15); border-color:rgba(147,197,253,0.3); color:#93c5fd;" title="Buscar en catálogo o Wikipedia y revincular especie agronómica">
+                  🔗 ${pot.speciesId ? 'Cambiar especie' : 'Vincular especie'}
+                </button>
                 ${originalUrl ? `
                   <a href="${originalUrl}" target="_blank" rel="noopener noreferrer" class="plant-bd-badge" style="text-decoration:none; color:#60a5fa; background:rgba(96,165,250,0.15); border-color:rgba(96,165,250,0.3);" title="Ver ficha original en Wikipedia / Base botánica">
                     🌐 Ficha Original ↗
@@ -1185,6 +1189,14 @@ class HidroBalconApp {
         const id = btnTimer.dataset.id;
         const pot = this.pots.find(p => p.id === id);
         this.openTimerModal(pot ? pot.name : 'Maceta');
+        return;
+      }
+
+      const btnRelink = e.target.closest('.btn-relink-species');
+      if (btnRelink) {
+        const id = btnRelink.dataset.id;
+        const name = btnRelink.dataset.name || '';
+        this.openPotModal(id, true, name);
         return;
       }
 
@@ -3214,93 +3226,252 @@ class HidroBalconApp {
 
     const seasonal = getSeasonalDaylightFactor(new Date());
     const dateFormatted = new Date().toLocaleDateString('es-ES', { month: 'long', day: 'numeric' });
+    const currentSettings = this.settings || db.getSettings() || {};
+
+    // Obtener valores actuales (con fallback a constantes por defecto)
+    const plantOverrides = currentSettings.plantTypes || {};
+    const materialOverrides = currentSettings.materials || {};
+    const sizeOverrides = currentSettings.sizes || {};
+    const thresholds = currentSettings.weatherThresholds || {};
+    const orientationOverrides = currentSettings.orientations || {};
+
+    const frostDanger = thresholds.frostDanger ?? 0;
+    const frostWarning = thresholds.frostWarning ?? 2.5;
+    const heatModerate = thresholds.heatModerate ?? 31;
+    const heatExtreme = thresholds.heatExtreme ?? 36;
 
     container.innerHTML = `
       <div class="modal-overlay active" id="config-params-modal">
-        <div class="modal-content" style="max-width: 680px; max-height: 88vh; overflow-y: auto;">
+        <div class="modal-content" style="max-width: 720px; max-height: 90vh; overflow-y: auto;">
           <div class="modal-header">
             <h3 class="modal-title">⚙️ Parámetros Agronómicos y Configuración</h3>
             <button class="modal-close" id="btn-close-config-modal">&times;</button>
           </div>
 
-          <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4;">
-            Transparencia de los algoritmos agronómicos del motor (JS/Wasm): factores de cálculo solar, coeficientes de evaporación por material, volumen de macetas y protección de heladas.
+          <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4; margin-bottom:0.75rem;">
+            Ajusta y calibra los coeficientes agronómicos del motor de riego. Los cambios se guardan localmente y recalibran inmediatamente todas las macetas y tareas del balcón.
           </p>
 
-          <!-- 1. FACTOR ESTACIONAL SOLAR ACTUAL -->
-          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem; margin-bottom:0.75rem;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <strong style="color:#ffffff; font-size:0.85rem;">☀️ Variación Estacional Solar (${dateFormatted}):</strong>
-              <span style="font-size:0.75rem; color:#38bdf8; font-weight:700; background:rgba(56,189,248,0.15); padding:0.15rem 0.5rem; border-radius:var(--radius-full);">
-                ${seasonal.daylightHoursOffset >= 0 ? `+${seasonal.daylightHoursOffset}h sol` : `${seasonal.daylightHoursOffset}h sol`}
+          <form id="form-config-agronomic" style="display:flex; flex-direction:column; gap:0.9rem;">
+            <!-- 1. FACTOR ESTACIONAL SOLAR ACTUAL -->
+            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="color:#ffffff; font-size:0.85rem;">☀️ Variación Estacional Solar en Curso (${dateFormatted}):</strong>
+                <span style="font-size:0.75rem; color:#38bdf8; font-weight:700; background:rgba(56,189,248,0.15); padding:0.15rem 0.5rem; border-radius:var(--radius-full);">
+                  ${seasonal.daylightHoursOffset >= 0 ? `+${seasonal.daylightHoursOffset}h sol` : `${seasonal.daylightHoursOffset}h sol`}
+                </span>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-top:0.45rem; font-size:0.75rem; color:var(--text-muted);">
+                <div>Offset solar diurno: <strong>${seasonal.daylightHoursOffset > 0 ? '+' : ''}${seasonal.daylightHoursOffset} horas</strong></div>
+                <div>Multiplicador evaporación: <strong>${seasonal.evaporationMultiplier}×</strong></div>
+              </div>
+              <span style="display:block; font-size:0.7rem; color:#94a3b8; margin-top:0.35rem;">
+                En invierno los días son cortos (-1.2h sol) con baja evaporación (0.85×); en verano el sol cenital (+1.2h) acelera la transpiración (1.20×).
               </span>
             </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; margin-top:0.45rem; font-size:0.75rem; color:var(--text-muted);">
-              <div>Offset solar diurno: <strong>${seasonal.daylightHoursOffset > 0 ? '+' : ''}${seasonal.daylightHoursOffset} horas</strong></div>
-              <div>Multiplicador evaporación: <strong>${seasonal.evaporationMultiplier}×</strong></div>
-            </div>
-            <span style="display:block; font-size:0.7rem; color:#94a3b8; margin-top:0.35rem;">
-              En invierno los días son cortos (-1.2h sol) con baja evaporación (0.85×); en verano el sol es cenital (+1.2h) y acelera la transpiración (1.20×).
-            </span>
-          </div>
 
-          <!-- 2. ORIENTACIONES CARDINALES (8 DIRECCIONES) -->
-          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem; margin-bottom:0.75rem;">
-            <strong style="color:#ffffff; font-size:0.85rem; display:block; margin-bottom:0.4rem;">🧭 Horas de Sol y Factor por Orientación (8 Rumbos):</strong>
-            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:0.4rem; font-size:0.72rem;">
-              ${Object.values(BALCONY_ORIENTATIONS).map(o => `
-                <div style="background:rgba(0,0,0,0.25); padding:0.4rem; border-radius:4px; border:1px solid rgba(255,255,255,0.05);">
-                  <div style="font-weight:700; color:#cbd5e1;">${o.label}</div>
-                  <div style="color:#94a3b8;">${o.baseSunHours}h sol base</div>
-                  <div style="color:#38bdf8;">Secado: ${o.dryingFactor}×</div>
+            <!-- 2. TIPOS DE PLANTA Y DEMANDAS HÍDRICAS (NUEVO & EDITABLE) -->
+            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                <strong style="color:#ffffff; font-size:0.85rem;">🌿 Familias Botánicas y Factor de Demanda Hídrica:</strong>
+                <span style="font-size:0.7rem; color:#34d399; font-weight:700;">Editable</span>
+              </div>
+              <span style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.6rem;">
+                Controla qué tan rápido consume agua cada tipo de planta y su intervalo mínimo y máximo de días entre riegos.
+              </span>
+              <div style="display:flex; flex-direction:column; gap:0.6rem;">
+                ${Object.values(PLANT_TYPES).map(pt => {
+                  const currentFactor = plantOverrides[pt.id]?.waterDemandFactor ?? pt.waterDemandFactor;
+                  const currentMin = plantOverrides[pt.id]?.minDaysBetweenWatering ?? pt.minDaysBetweenWatering;
+                  const currentMax = plantOverrides[pt.id]?.maxDaysBetweenWatering ?? pt.maxDaysBetweenWatering;
+                  return `
+                    <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.55rem; display:flex; flex-direction:column; gap:0.35rem;">
+                      <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700; font-size:0.8rem; color:#f1f5f9;">${pt.icon} ${pt.label}</span>
+                        <span style="font-size:0.7rem; color:#94a3b8;">Por defecto: ${pt.waterDemandFactor}× (${pt.minDaysBetweenWatering}-${pt.maxDaysBetweenWatering}d)</span>
+                      </div>
+                      <div style="display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:0.5rem; align-items:center; font-size:0.72rem;">
+                        <div>
+                          <label style="color:#cbd5e1; display:block; margin-bottom:0.15rem;">Factor Demanda:</label>
+                          <input type="number" step="0.05" min="0.1" max="5.0" class="form-input config-plant-factor" data-id="${pt.id}" value="${currentFactor}" style="padding:0.25rem 0.45rem; font-size:0.75rem;" />
+                        </div>
+                        <div>
+                          <label style="color:#cbd5e1; display:block; margin-bottom:0.15rem;">Días Mínimos:</label>
+                          <input type="number" step="1" min="1" max="60" class="form-input config-plant-min" data-id="${pt.id}" value="${currentMin}" style="padding:0.25rem 0.45rem; font-size:0.75rem;" />
+                        </div>
+                        <div>
+                          <label style="color:#cbd5e1; display:block; margin-bottom:0.15rem;">Días Máximos:</label>
+                          <input type="number" step="1" min="1" max="90" class="form-input config-plant-max" data-id="${pt.id}" value="${currentMax}" style="padding:0.25rem 0.45rem; font-size:0.75rem;" />
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <!-- 3. MATERIAL DE LA MACETA -->
+            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                <strong style="color:#ffffff; font-size:0.85rem;">🪴 Retención y Transpiración por Material:</strong>
+                <span style="font-size:0.7rem; color:#34d399; font-weight:700;">Editable</span>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.5rem; font-size:0.72rem;">
+                ${Object.values(POT_MATERIALS).map(m => {
+                  const currentMultiplier = materialOverrides[m.id]?.dryingMultiplier ?? m.dryingMultiplier;
+                  return `
+                    <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.5rem;">
+                      <div style="font-weight:700; color:#cbd5e1; margin-bottom:0.2rem;">${m.label.split('(')[0]}</div>
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:0.4rem;">
+                        <span style="color:#94a3b8;">Multiplicador:</span>
+                        <input type="number" step="0.05" min="0.3" max="4.0" class="form-input config-material-factor" data-id="${m.id}" value="${currentMultiplier}" style="width:75px; padding:0.2rem 0.4rem; font-size:0.75rem; text-align:right;" />
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <!-- 4. VOLUMEN DE SUSTRATO -->
+            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                <strong style="color:#ffffff; font-size:0.85rem;">🧊 Factor de Inercia por Volumen de Sustrato:</strong>
+                <span style="font-size:0.7rem; color:#34d399; font-weight:700;">Editable</span>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.5rem; font-size:0.72rem;">
+                ${Object.values(POT_SIZES).map(s => {
+                  const currentMultiplier = sizeOverrides[s.id]?.dryingMultiplier ?? s.dryingMultiplier;
+                  return `
+                    <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.5rem;">
+                      <div style="font-weight:700; color:#cbd5e1; margin-bottom:0.2rem;">${s.label.split('(')[0]}</div>
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:0.4rem;">
+                        <span style="color:#94a3b8;">Multiplicador secado:</span>
+                        <input type="number" step="0.05" min="0.2" max="3.0" class="form-input config-size-factor" data-id="${s.id}" value="${currentMultiplier}" style="width:75px; padding:0.2rem 0.4rem; font-size:0.75rem; text-align:right;" />
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <!-- 5. UMBRALES DE SEGURIDAD CLIMÁTICA Y HELADAS -->
+            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                <strong style="color:#ffffff; font-size:0.85rem;">❄️ Umbrales de Seguridad Climática (°C):</strong>
+                <span style="font-size:0.7rem; color:#34d399; font-weight:700;">Editable</span>
+              </div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; font-size:0.72rem;">
+                <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.5rem;">
+                  <label style="color:#38bdf8; font-weight:700; display:block; margin-bottom:0.2rem;">❄️ Helada crítica (&le; °C):</label>
+                  <input type="number" step="0.5" id="config-frost-danger" class="form-input" value="${frostDanger}" style="padding:0.25rem 0.45rem; font-size:0.75rem;" />
+                  <span style="font-size:0.68rem; color:#94a3b8; margin-top:0.2rem; display:block;">Bloqueo absoluto de riego para evitar congelación de raíces.</span>
                 </div>
-              `).join('')}
-            </div>
-          </div>
-
-          <!-- 3. INERCIA HÍDRICA POR VOLUMEN Y MATERIAL -->
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; margin-bottom:0.75rem;">
-            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.65rem; font-size:0.72rem;">
-              <strong style="color:#ffffff; display:block; margin-bottom:0.35rem;">🪴 Retención por Material:</strong>
-              ${Object.values(POT_MATERIALS).map(m => `
-                <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
-                  <span>${m.label.split('(')[0]}</span>
-                  <span style="color:#34d399; font-weight:700;">${m.dryingMultiplier}× secado</span>
+                <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.5rem;">
+                  <label style="color:#93c5fd; font-weight:700; display:block; margin-bottom:0.2rem;">⚠️ Alerta helada preventiva (&le; °C):</label>
+                  <input type="number" step="0.5" id="config-frost-warning" class="form-input" value="${frostWarning}" style="padding:0.25rem 0.45rem; font-size:0.75rem;" />
+                  <span style="font-size:0.68rem; color:#94a3b8; margin-top:0.2rem; display:block;">Aviso preventivo en macetas exteriores.</span>
                 </div>
-              `).join('')}
-            </div>
-
-            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.65rem; font-size:0.72rem;">
-              <strong style="color:#ffffff; display:block; margin-bottom:0.35rem;">🧊 Factor por Volumen de Sustrato:</strong>
-              ${Object.values(POT_SIZES).map(s => `
-                <div style="display:flex; justify-content:space-between; margin-bottom:0.25rem;">
-                  <span>${s.label.split('(')[0]}</span>
-                  <span style="color:#38bdf8; font-weight:700;">${s.dryingMultiplier}× inercia</span>
+                <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.5rem;">
+                  <label style="color:#f59e0b; font-weight:700; display:block; margin-bottom:0.2rem;">☀️ Calor moderado (&ge; °C):</label>
+                  <input type="number" step="1" id="config-heat-moderate" class="form-input" value="${heatModerate}" style="padding:0.25rem 0.45rem; font-size:0.75rem;" />
+                  <span style="font-size:0.68rem; color:#94a3b8; margin-top:0.2rem; display:block;">Activa recomendación de riego temprano.</span>
                 </div>
-              `).join('')}
+                <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.5rem;">
+                  <label style="color:#ef4444; font-weight:700; display:block; margin-bottom:0.2rem;">🔥 Ola de calor extrema (&ge; °C):</label>
+                  <input type="number" step="1" id="config-heat-extreme" class="form-input" value="${heatExtreme}" style="padding:0.25rem 0.45rem; font-size:0.75rem;" />
+                  <span style="font-size:0.68rem; color:#94a3b8; margin-top:0.2rem; display:block;">Aumenta transpiración y prioridad máxima matinal.</span>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <!-- 4. UMBRALES DE RIESGO CLIMÁTICO Y HELADAS -->
-          <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.65rem; font-size:0.72rem; margin-bottom:0.75rem;">
-            <strong style="color:#ffffff; display:block; margin-bottom:0.35rem;">❄️ Umbrales de Seguridad Climática:</strong>
-            <ul style="padding-left:1.1rem; color:var(--text-muted); display:flex; flex-direction:column; gap:0.2rem; margin:0;">
-              <li><strong>Helada crítica (&le; 0°C):</strong> Bloqueo estricto de riego para prevenir congelación radicular.</li>
-              <li><strong>Alerta de helada preventiva (&le; 2°C):</strong> Suspender riegos salvo desecación extrema.</li>
-              <li><strong>Golpe de calor (&ge; 35°C):</strong> Riego prioritario a primera hora matinal o crepúsculo.</li>
-              <li><strong>Lluvia exterior (&ge; 5mm):</strong> Pausa de riego automático en macetas de cielo abierto.</li>
-            </ul>
-          </div>
-
-          <div style="display:flex; justify-content:flex-end; margin-top:0.85rem;">
-            <button type="button" class="btn" id="btn-close-config-footer">Entendido / Cerrar</button>
-          </div>
+            <!-- BOTONES DE ACCIÓN DEL MODAL -->
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-top:0.5rem;">
+              <button type="button" class="btn btn-sm btn-outline" id="btn-reset-config-defaults" style="color:#f87171; border-color:rgba(239,68,68,0.3);">
+                🔄 Restaurar Valores por Defecto
+              </button>
+              <div style="display:flex; gap:0.5rem;">
+                <button type="button" class="btn" id="btn-close-config-footer">Cancelar</button>
+                <button type="submit" class="btn btn-primary" id="btn-save-config">
+                  💾 Guardar Parámetros
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
       </div>
     `;
 
     document.getElementById('btn-close-config-modal')?.addEventListener('click', () => { container.innerHTML = ''; });
     document.getElementById('btn-close-config-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
+
+    // Botón restaurar valores de fábrica
+    document.getElementById('btn-reset-config-defaults')?.addEventListener('click', async () => {
+      if (confirm('¿Deseas restaurar todos los coeficientes agronómicos a sus valores iniciales por defecto?')) {
+        db.resetSettings();
+        await this.refreshData();
+        this.render();
+        container.innerHTML = '';
+        this.showToast('Parámetros agronómicos restaurados por defecto 🔄', 'info');
+      }
+    });
+
+    // Guardar formulario
+    document.getElementById('form-config-agronomic')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      // Recopilar plantTypes
+      const newPlantTypes = {};
+      container.querySelectorAll('.config-plant-factor').forEach(input => {
+        const id = input.dataset.id;
+        const factor = parseFloat(input.value) || PLANT_TYPES[id]?.waterDemandFactor || 1.0;
+        const minDays = parseInt(container.querySelector(`.config-plant-min[data-id="${id}"]`)?.value, 10) || PLANT_TYPES[id]?.minDaysBetweenWatering || 2;
+        const maxDays = parseInt(container.querySelector(`.config-plant-max[data-id="${id}"]`)?.value, 10) || PLANT_TYPES[id]?.maxDaysBetweenWatering || 7;
+        newPlantTypes[id] = {
+          waterDemandFactor: factor,
+          minDaysBetweenWatering: minDays,
+          maxDaysBetweenWatering: maxDays
+        };
+      });
+
+      // Recopilar materials
+      const newMaterials = {};
+      container.querySelectorAll('.config-material-factor').forEach(input => {
+        const id = input.dataset.id;
+        const factor = parseFloat(input.value) || POT_MATERIALS[id]?.dryingMultiplier || 1.0;
+        newMaterials[id] = { dryingMultiplier: factor };
+      });
+
+      // Recopilar sizes
+      const newSizes = {};
+      container.querySelectorAll('.config-size-factor').forEach(input => {
+        const id = input.dataset.id;
+        const factor = parseFloat(input.value) || POT_SIZES[id]?.dryingMultiplier || 1.0;
+        newSizes[id] = { dryingMultiplier: factor };
+      });
+
+      // Recopilar thresholds climáticos
+      const newThresholds = {
+        frostDanger: parseFloat(document.getElementById('config-frost-danger')?.value) || 0,
+        frostWarning: parseFloat(document.getElementById('config-frost-warning')?.value) || 2.5,
+        heatModerate: parseFloat(document.getElementById('config-heat-moderate')?.value) || 31,
+        heatExtreme: parseFloat(document.getElementById('config-heat-extreme')?.value) || 36
+      };
+
+      const updatedSettings = {
+        ...(this.settings || db.getSettings() || {}),
+        plantTypes: newPlantTypes,
+        materials: newMaterials,
+        sizes: newSizes,
+        weatherThresholds: newThresholds,
+        updatedAt: new Date().toISOString()
+      };
+
+      db.saveSettings(updatedSettings);
+      await this.refreshData();
+      this.render();
+      container.innerHTML = '';
+      this.showToast('✅ Parámetros agronómicos actualizados y aplicados', 'success');
+    });
   }
 
   // ================= MODALS: TIMER, POT, CITY, APK ================= //
@@ -3438,7 +3609,7 @@ class HidroBalconApp {
     }
   }
 
-  openPotModal(editId = null) {
+  openPotModal(editId = null, openAssistant = false, initialQuery = '') {
     const container = document.getElementById('modal-container');
     if (!container) return;
 
@@ -3460,6 +3631,7 @@ class HidroBalconApp {
     };
 
     const existingCover = editId ? this.potCovers[editId] : null;
+    const shouldShowAssistant = (!isEdit) || openAssistant;
 
     container.innerHTML = `
       <div class="modal-overlay active" id="pot-modal">
@@ -3480,11 +3652,11 @@ class HidroBalconApp {
                 </div>
               </div>
               <button type="button" class="btn btn-sm" id="btn-assistant-toggle-label" style="pointer-events:none;">
-                ${isEdit ? 'Explorar ▾' : 'Ocultar ▴'}
+                ${shouldShowAssistant ? 'Ocultar ▴' : 'Explorar ▾'}
               </button>
             </div>
 
-            <div id="plant-assistant-panel" class="plant-assistant-panel" style="${isEdit ? 'display:none;' : 'display:flex;'}">
+            <div id="plant-assistant-panel" class="plant-assistant-panel" style="${shouldShowAssistant ? 'display:flex;' : 'display:none;'}">
               <!-- CATEGORY CHIPS -->
               <div class="plant-category-chips" id="plant-category-chips">
                 <button type="button" class="plant-chip active" data-cat="all">⭐ Todos (100)</button>
@@ -3953,7 +4125,7 @@ class HidroBalconApp {
 
       audioService.playChime();
       this.showToast(`✨ ¡Datos aplicados de ${plant.name}!`, 'success');
-    });
+    }, initialQuery);
 
     document.getElementById('pot-form')?.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -4052,7 +4224,7 @@ class HidroBalconApp {
     });
   }
 
-  setupBotanicalAssistant(container, onSelect) {
+  setupBotanicalAssistant(container, onSelect, initialQuery = '') {
     const banner = container.querySelector('#btn-toggle-plant-assistant');
     const panel = container.querySelector('#plant-assistant-panel');
     const toggleLabel = container.querySelector('#btn-assistant-toggle-label');
@@ -4065,7 +4237,10 @@ class HidroBalconApp {
     if (!panel || !listEl) return;
 
     let currentCategory = 'all';
-    let searchQuery = '';
+    let searchQuery = (initialQuery || '').trim();
+    if (searchInput && searchQuery) {
+      searchInput.value = searchQuery;
+    }
     let debounceTimer = null;
 
     // Toggle panel
@@ -4231,6 +4406,9 @@ class HidroBalconApp {
 
     // Initial render
     renderCatalog();
+    if (searchQuery.length >= 2) {
+      searchOnline(searchQuery);
+    }
   }
 
   openCityModal() {

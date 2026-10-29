@@ -308,7 +308,7 @@ export function calculateOrientationAndShadowFactor({ orientation = 'south', sha
 /**
  * Evalúa los riesgos climáticos para el día actual y previsión próxima
  */
-export function analyzeWeatherRisks(weatherData) {
+export function analyzeWeatherRisks(weatherData, customSettings = {}) {
   const currentTemp = weatherData?.currentTemp ?? 20;
   const minTemp = weatherData?.minTemp ?? 15;
   const maxTemp = weatherData?.maxTemp ?? 25;
@@ -316,20 +316,25 @@ export function analyzeWeatherRisks(weatherData) {
   const rainProb = weatherData?.rainProb ?? 0;
   const et0 = weatherData?.et0 ?? 3.5;
 
+  const frostDangerThreshold = customSettings?.weatherThresholds?.frostDanger ?? 0;
+  const frostWarningThreshold = customSettings?.weatherThresholds?.frostWarning ?? 2.5;
+  const heatExtremeThreshold = customSettings?.weatherThresholds?.heatExtreme ?? 36;
+  const heatModerateThreshold = customSettings?.weatherThresholds?.heatModerate ?? 31;
+
   let frostRisk = 'none'; // 'none' | 'warning' | 'danger'
   let heatRisk = 'none';  // 'none' | 'moderate' | 'extreme'
 
   // Regla de helada
-  if (minTemp <= 0) {
+  if (minTemp <= frostDangerThreshold) {
     frostRisk = 'danger';
-  } else if (minTemp <= 2.5) {
+  } else if (minTemp <= frostWarningThreshold) {
     frostRisk = 'warning';
   }
 
   // Regla de ola de calor
-  if (maxTemp >= 36) {
+  if (maxTemp >= heatExtremeThreshold) {
     heatRisk = 'extreme';
-  } else if (maxTemp >= 31) {
+  } else if (maxTemp >= heatModerateThreshold) {
     heatRisk = 'moderate';
   }
 
@@ -351,8 +356,8 @@ export function analyzeWeatherRisks(weatherData) {
 /**
  * Calcula el multiplicador de evaporación ambiental a partir de la temperatura y ET0
  */
-export function calculateEnvironmentalEvaporation(weather) {
-  const risks = analyzeWeatherRisks(weather);
+export function calculateEnvironmentalEvaporation(weather, customSettings = {}) {
+  const risks = analyzeWeatherRisks(weather, customSettings);
   const maxT = risks.maxTemp;
   const et0 = risks.et0;
 
@@ -378,7 +383,7 @@ export function calculateEnvironmentalEvaporation(weather) {
  * @param {Object} weather - Datos del clima actual/previsto
  * @param {Date|string} now - Fecha y hora actual
  */
-export function calculatePotWatering(pot, weather, now = new Date()) {
+export function calculatePotWatering(pot, weather, now = new Date(), customSettings = {}) {
   const currentDate = new Date(now);
   const lastWateredDate = pot.lastWatered ? new Date(pot.lastWatered) : new Date(currentDate.getTime() - 86400000 * 2);
   
@@ -386,12 +391,24 @@ export function calculatePotWatering(pot, weather, now = new Date()) {
   const diffMs = currentDate.getTime() - lastWateredDate.getTime();
   const daysSince = Math.max(0, diffMs / (1000 * 60 * 60 * 24));
 
-  const plant = PLANT_TYPES[pot.plantType] || PLANT_TYPES.foliage;
+  const defaultPlant = PLANT_TYPES[pot.plantType] || PLANT_TYPES.foliage;
+  const customPlant = customSettings?.plantTypes?.[pot.plantType] || {};
+  const plant = { ...defaultPlant, ...customPlant };
+
   const rawMaterial = pot.container ? pot.container.material : pot.material;
-  const material = POT_MATERIALS[rawMaterial] || POT_MATERIALS.terracotta;
-  const size = POT_SIZES[pot.size] || POT_SIZES.medium;
+  const defaultMaterial = POT_MATERIALS[rawMaterial] || POT_MATERIALS.terracotta;
+  const customMat = customSettings?.materials?.[rawMaterial] || {};
+  const material = { ...defaultMaterial, ...customMat };
+
+  const defaultSize = POT_SIZES[pot.size] || POT_SIZES.medium;
+  const customSz = customSettings?.sizes?.[pot.size] || {};
+  const size = { ...defaultSize, ...customSz };
+
   const rawSun = pot.container ? pot.container.sunExposure : pot.sunExposure;
-  const sun = SUN_EXPOSURES[rawSun] || SUN_EXPOSURES.partial_sun;
+  const defaultSun = SUN_EXPOSURES[rawSun] || SUN_EXPOSURES.partial_sun;
+  const customSn = customSettings?.sunExposures?.[rawSun] || {};
+  const sun = { ...defaultSun, ...customSn };
+
   const isCovered = pot.container ? Boolean(pot.container.isCovered) : Boolean(pot.isCovered); // Balcón techado
 
   // Multiplicador de secado por contenedor: si está en jardinera corrida, aprovecha la inercia térmica
@@ -411,16 +428,22 @@ export function calculatePotWatering(pot, weather, now = new Date()) {
 
   // Zona del balcón / terraza ("contenedor de contenedores")
   const zone = pot.zone || pot.container?.zone || null;
-  const orientation = pot.orientation || zone?.orientation || pot.container?.orientation || 'south';
+  const rawOrientation = pot.orientation || zone?.orientation || pot.container?.orientation || 'south';
+  const customOrientation = customSettings?.orientations?.[rawOrientation] || {};
   const shadow = pot.shadow || zone?.shadow || pot.container?.shadow || 'none';
   const microclimate = calculateOrientationAndShadowFactor({
-    orientation,
+    orientation: rawOrientation,
     shadow,
     baseExposure: rawSun
   });
 
-  const risks = analyzeWeatherRisks(weather);
-  const envFactor = calculateEnvironmentalEvaporation(weather);
+  if (customOrientation.dryingMultiplier) {
+    microclimate.orientationFactor = customOrientation.dryingMultiplier;
+    microclimate.microclimateMultiplier = customOrientation.dryingMultiplier * microclimate.shadowFactor;
+  }
+
+  const risks = analyzeWeatherRisks(weather, customSettings);
+  const envFactor = calculateEnvironmentalEvaporation(weather, customSettings);
 
   // Tasa de secado compuesta
   // Una maceta pequeña de barro al sol con calor se seca x3 más rápido que una jardinera plástica a la sombra

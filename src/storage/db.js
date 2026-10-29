@@ -397,6 +397,28 @@ export class Database {
     return zones;
   }
 
+  getSettings() {
+    try {
+      const data = this._getItem(STORAGE_KEYS.SETTINGS);
+      return data ? JSON.parse(data) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  saveSettings(settings) {
+    try {
+      this._setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    } catch (e) {
+      console.warn('Error saving settings:', e);
+    }
+  }
+
+  resetSettings() {
+    this._removeItem(STORAGE_KEYS.SETTINGS);
+    return {};
+  }
+
   getLogs() {
     try {
       const data = this._getItem(STORAGE_KEYS.LOGS);
@@ -418,6 +440,7 @@ export class Database {
     this.savePots(DEFAULT_POTS);
     this.saveContainers(DEFAULT_CONTAINERS);
     this.saveZones(DEFAULT_ZONES);
+    this.resetSettings();
     this._removeItem(STORAGE_KEYS.LOGS);
     return DEFAULT_POTS;
   }

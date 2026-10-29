@@ -199,4 +199,43 @@ describe('Motor de Riego Agronómico para Terraza y Macetas', () => {
     // La planta en jardinera retiene significativamente más humedad debido al volumen compartido
     expect(resPlanter.soilMoisturePercent).toBeGreaterThan(resSolo.soilMoisturePercent);
   });
+
+  it('respeta la personalización manual de parámetros agronómicos y tipos de planta', () => {
+    const pot = {
+      id: 'custom-pot',
+      name: 'Tomatito Adaptado',
+      plantType: 'vegetable',
+      material: 'plastic',
+      size: 'medium',
+      sunExposure: 'full_sun',
+      isCovered: false,
+      lastWatered: '2026-05-13T10:00:00Z'
+    };
+
+    // Sin custom settings
+    const defaultRes = calculatePotWatering(pot, baseWeather, now);
+
+    // Con custom settings que reducen la demanda hídrica a la mitad
+    const customSettings = {
+      plantTypes: {
+        vegetable: { waterDemandFactor: 0.85 }
+      },
+      weatherThresholds: {
+        frostDanger: 2.0 // Elevar umbral de helada a 2°C
+      }
+    };
+
+    const customRes = calculatePotWatering(pot, baseWeather, now, customSettings);
+
+    // El intervalo debe ser mayor porque la demanda se redujo
+    expect(customRes.effectiveIntervalDays).toBeGreaterThan(defaultRes.effectiveIntervalDays);
+
+    // Verificar nuevo umbral de helada
+    const coldWeather = { ...baseWeather, minTemp: 1.5 };
+    const riskDefault = analyzeWeatherRisks(coldWeather);
+    const riskCustom = analyzeWeatherRisks(coldWeather, customSettings);
+
+    expect(riskDefault.frostRisk).toBe('warning'); // 1.5°C por defecto es warning (<= 2.5) pero no danger (<= 0)
+    expect(riskCustom.frostRisk).toBe('danger'); // con threshold custom (<= 2.0) se convierte en danger
+  });
 });

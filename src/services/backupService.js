@@ -16,6 +16,8 @@ class BackupService {
   async exportFullBackup() {
     const pots = db.getPots();
     const containers = db.getContainers();
+    const zones = db.getZones();
+    const settings = db.getSettings();
     const logs = db.getLogs();
 
     // Recopilar todas las fotos de todas las macetas de IndexedDB
@@ -30,12 +32,14 @@ class BackupService {
     }
 
     const backupData = {
-      version: '1.3.0',
+      version: '1.4.0',
       exportedAt: new Date().toISOString(),
       appName: 'HidroBalcón PWA',
       data: {
         pots,
         containers,
+        zones,
+        settings,
         logs,
         photos: allPhotos
       }
@@ -76,7 +80,7 @@ class BackupService {
             throw new Error('El archivo no tiene el formato de copia de seguridad de HidroBalcón.');
           }
 
-          const { pots, containers, logs, photos } = content.data;
+          const { pots, containers, zones, settings, logs, photos } = content.data;
 
           // 1. Restaurar macetas
           db.savePots(pots || []);
@@ -84,6 +88,16 @@ class BackupService {
           // 1.1 Restaurar jardineras / contenedores padre
           if (containers && Array.isArray(containers)) {
             db.saveContainers(containers);
+          }
+
+          // 1.2 Restaurar zonas
+          if (zones && Array.isArray(zones)) {
+            db.saveZones(zones);
+          }
+
+          // 1.3 Restaurar ajustes agronómicos manuales
+          if (settings && typeof settings === 'object') {
+            db.saveSettings(settings);
           }
 
           // 2. Restaurar historial
