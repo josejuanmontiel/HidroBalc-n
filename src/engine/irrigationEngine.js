@@ -451,46 +451,185 @@ export function calculatePotWatering(pot, weather, now = new Date(), customSetti
   const risks = analyzeWeatherRisks(weather, customSettings);
   const envFactor = calculateEnvironmentalEvaporation(weather, customSettings);
 
-  // Tasa de secado compuesta
-  // Una maceta pequeña de barro al sol con calor se seca x3 más rápido que una jardinera plástica a la sombra
-  const compositeDryingRate = (
+  // Tasa de secado intrínseca del conjunto (planta * maceta * sustrato * insolación)
+  const baseDryingFactorWithoutEnv = (
     plant.waterDemandFactor *
     material.dryingMultiplier *
     sizeMultiplier *
     sun.dryingMultiplier *
-    microclimate.microclimateMultiplier *
-    envFactor
+    microclimate.microclimateMultiplier
   );
 
-  // Intervalo de riego nominal para esta maceta en estas condiciones (en días)
+  // Intervalo nominal de riego para esta maceta en estas condiciones (en días)
   const baseInterval = (plant.minDaysBetweenWatering + plant.maxDaysBetweenWatering) / 2;
+  const compositeDryingRate = baseDryingFactorWithoutEnv * envFactor;
   const effectiveIntervalDays = Math.max(0.8, baseInterval / compositeDryingRate);
 
-  // Estimación de pérdida hídrica base (%)
-  let soilMoisturePercent = Math.max(0, Math.min(100, Math.round(100 - (daysSince / effectiveIntervalDays) * 100)));
+  // Parámetros de umbral configurables (con valores por defecto calibrados)
+  const soakRainThreshold = customSettings?.weatherThresholds?.rainSoakThreshold ?? 15;
+  const minEffectiveRain = customSettings?.weatherThresholds?.rainMinEffective ?? 4;
+  const moistureThreshold = customSettings?.weatherThresholds?.moistureThreshold ?? 30;
 
-  // Impacto de la lluvia
-  let rainImpact = 0;
-  if (!isCovered && risks.rainSum > 0) {
-    if (risks.rainSum >= 15) {
-      // Lluvia copiosa al aire libre empapa el sustrato
-      soilMoisturePercent = 100;
-      rainImpact = risks.rainSum;
-    } else if (risks.rainSum >= 4) {
-      // Lluvia media recarga entre 30% y 60%
-      const recharge = Math.min(60, risks.rainSum * 5);
-      soilMoisturePercent = Math.min(100, soilMoisturePercent + recharge);
-      rainImpact = risks.rainSum;
+  // Helper para formatear Date a YYYY-MM-DD de forma consistente
+  const formatYMD = (d) => {
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  // Helper para buscar el clima de un día concreto en histórico/previsión
+  const getDayWeatherRecord = (dateStr) => {
+    if (!weather) return null;
+    if (weather.allDaysMap && weather.allDaysMap[dateStr]) return weather.allDaysMap[dateStr];
+    if (Array.isArray(weather.allDays)) {
+      const found = weather.allDays.find(d => d.date === dateStr);
+      if (found) return found;
+    }
+    if (Array.isArray(weather.forecastDays)) {
+      const found = weather.forecastDays.find(d => d.date === dateStr);
+      if (found) return found;
+    }
+    if (Array.isArray(weather.historicalDays)) {
+      const found = weather.historicalDays.find(d => d.date === dateStr);
+      if (found) return found;
+    }
+    return weather;
+  };
+
+  // ================= 1. BALANCE HÍDRICO HISTÓRICO (DESDE ÚLTIMO RIEGO HASTA HOY) ================= //
+  const currentMidnight = Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), currentDate.getUTCDate());
+  const totalDaysElapsed = Math.max(0, diffMs / 86400000);
+  const fullDays = Math.floor(totalDaysElapsed);
+  const remainingFraction = totalDaysElapsed - fullDays;
+
+  let soilMoisture = 100; // Al regar, el cepellón parte al 100% de capacidad de campo
+  let totalRainAbsorbed = 0;
+
+  if (totalDaysElapsed <= 0) {
+    soilMoisture = 100;
+  } else {
+    // 1. Días completos transcurridos
+    for (let step = 0; step < fullDays; step++) {
+      const stepTime = lastWateredDate.getTime() + (step + 0.5) * 86400000;
+      const stepDate = new Date(stepTime);
+      const dateStr = formatYMD(stepDate);
+      const dayW = getDayWeatherRecord(dateStr) || weather;
+
+      const dayEnv = calculateEnvironmentalEvaporation(dayW, customSettings);
+      const dayComposite = baseDryingFactorWithoutEnv * dayEnv;
+      const dayEffInterval = Math.max(0.8, baseInterval / dayComposite);
+      const dayDrain = 100 / dayEffInterval;
+
+      soilMoisture = Math.max(0, soilMoisture - dayDrain);
+
+      // Si la maceta está al aire libre (sin techo), las lluvias históricas recargan el sustrato
+      const dayRain = dayW?.rainSum ?? 0;
+      if (!isCovered && dayRain > 0) {
+        if (dayRain >= soakRainThreshold) {
+          soilMoisture = 100;
+          totalRainAbsorbed += dayRain;
+        } else if (dayRain >= minEffectiveRain) {
+          const recharge = Math.min(60, dayRain * 5);
+          soilMoisture = Math.min(100, soilMoisture + recharge);
+          totalRainAbsorbed += dayRain;
+        } else {
+          const recharge = Math.min(25, dayRain * 3);
+          soilMoisture = Math.min(100, soilMoisture + recharge);
+          totalRainAbsorbed += dayRain;
+        }
+      }
+    }
+
+    // 2. Fracción de día restante
+    if (remainingFraction > 0.02) {
+      const fracDate = new Date(currentDate.getTime());
+      const dateStr = formatYMD(fracDate);
+      const dayW = getDayWeatherRecord(dateStr) || weather;
+
+      const dayEnv = calculateEnvironmentalEvaporation(dayW, customSettings);
+      const dayComposite = baseDryingFactorWithoutEnv * dayEnv;
+      const dayEffInterval = Math.max(0.8, baseInterval / dayComposite);
+      const fracDrain = (100 / dayEffInterval) * remainingFraction;
+
+      soilMoisture = Math.max(0, soilMoisture - fracDrain);
+
+      // Si llovió hoy al aire libre y no hubo días previos o complementa
+      const dayRain = dayW?.rainSum ?? 0;
+      if (!isCovered && dayRain > 0 && fullDays === 0) {
+        if (dayRain >= soakRainThreshold) {
+          soilMoisture = 100;
+          totalRainAbsorbed += dayRain;
+        } else if (dayRain >= minEffectiveRain) {
+          soilMoisture = Math.min(100, soilMoisture + Math.min(60, dayRain * 5));
+          totalRainAbsorbed += dayRain;
+        } else {
+          soilMoisture = Math.min(100, soilMoisture + Math.min(25, dayRain * 3));
+          totalRainAbsorbed += dayRain;
+        }
+      }
     }
   }
 
-  // Días restantes hasta requerir riego (humedad umbral ~ 30%)
-  const moistureReserve = Math.max(0, soilMoisturePercent - 30);
-  const dailyDrain = 100 / effectiveIntervalDays;
-  const daysUntilWatering = Math.round((moistureReserve / dailyDrain) * 10) / 10;
+  let soilMoisturePercent = Math.max(0, Math.min(100, Math.round(soilMoisture)));
 
-  // Fecha recomendada para el próximo riego
-  const nextWaterDate = new Date(currentDate.getTime() + Math.max(0, daysUntilWatering) * 86400000);
+  // ================= 2. PROYECCIÓN FUTURA DÍA A DÍA CON PREVISIÓN OPEN-METEO ================= //
+  let daysUntilWatering = 0;
+  let nextWaterDate = currentDate;
+  let futureRainPostponed = false;
+
+  if (soilMoisturePercent <= moistureThreshold) {
+    daysUntilWatering = 0;
+    nextWaterDate = currentDate;
+  } else {
+    let simMoisture = soilMoisturePercent;
+    let foundDays = null;
+
+    for (let j = 1; j <= 14; j++) {
+      const futureDate = new Date(currentMidnight + j * 86400000);
+      const dateStr = formatYMD(futureDate);
+      const dayW = getDayWeatherRecord(dateStr) || weather;
+
+      const dayEnv = calculateEnvironmentalEvaporation(dayW, customSettings);
+      const dayComposite = baseDryingFactorWithoutEnv * dayEnv;
+      const dayEffInterval = Math.max(0.8, baseInterval / dayComposite);
+      const dayDrain = 100 / dayEffInterval;
+
+      simMoisture -= dayDrain;
+
+      // Si se prevé lluvia futura en macetas abiertas, pospone el momento de regar
+      const futureRain = dayW?.rainSum ?? 0;
+      if (!isCovered && futureRain > 0) {
+        if (futureRain >= soakRainThreshold) {
+          simMoisture = 100;
+          futureRainPostponed = true;
+        } else if (futureRain >= minEffectiveRain) {
+          simMoisture = Math.min(100, simMoisture + Math.min(60, futureRain * 5));
+          futureRainPostponed = true;
+        } else {
+          simMoisture = Math.min(100, simMoisture + Math.min(25, futureRain * 3));
+        }
+      }
+
+      if (simMoisture <= moistureThreshold) {
+        const over = moistureThreshold - simMoisture;
+        const frac = dayDrain > 0 ? Math.min(1, Math.max(0, over / dayDrain)) : 0;
+        foundDays = Math.round((j - frac) * 10) / 10;
+        nextWaterDate = futureDate;
+        break;
+      }
+    }
+
+    if (foundDays === null) {
+      // Si la humedad no cae al umbral en 14 días (ej. cactus o lluvias constantes)
+      const dailyDrain = 100 / effectiveIntervalDays;
+      const remainingMoisture = Math.max(0, simMoisture - moistureThreshold);
+      foundDays = Math.round((14 + remainingMoisture / dailyDrain) * 10) / 10;
+      nextWaterDate = new Date(currentDate.getTime() + foundDays * 86400000);
+    }
+
+    daysUntilWatering = Math.max(0, foundDays);
+  }
 
   // Determinación de la mejor hora del día
   let bestTimeOfDay = 'Primera hora de la mañana (07:00 - 09:00)';
@@ -516,7 +655,7 @@ export function calculatePotWatering(pot, weather, now = new Date(), customSetti
       label: `Alerta Helada (${risks.minTemp}°C)`,
       color: '#0284c7'
     };
-  } else if (risks.isFrostPossible && soilMoisturePercent <= 30) {
+  } else if (risks.isFrostPossible && soilMoisturePercent <= moistureThreshold) {
     // Alerta de escarcha pero la planta tiene mucha sed
     status = 'due';
     actionTitle = '⚠️ Precaución por frío (Riego sólo al mediodía)';
@@ -549,13 +688,19 @@ export function calculatePotWatering(pot, weather, now = new Date(), customSetti
     actionTitle = 'Sustrato húmedo / recién regado';
     actionDescription = isCovered
       ? 'La tierra tiene reserva de agua suficiente.'
-      : (rainImpact > 0 ? `Regada de forma natural por la lluvia exterior (${rainImpact} mm).` : 'La tierra tiene reserva de agua suficiente.');
+      : (totalRainAbsorbed > 0 
+          ? `Regada de forma natural por lluvia exterior acumulada (${Math.round(totalRainAbsorbed)} mm).`
+          : (risks.rainSum > 0 ? `Regada de forma natural por la lluvia exterior (${risks.rainSum} mm).` : 'La tierra tiene reserva de agua suficiente.'));
   }
 
-  // Notificación particular sobre terraza techada vs lluvia
+  // Notificación particular sobre terraza techada vs lluvia o previsiones
   let balconyNotice = null;
   if (isCovered && risks.rainSum >= 5) {
     balconyNotice = `🌧️ Ojo: Fuera caen ${risks.rainSum} mm de lluvia, pero al estar bajo techo esta maceta NO se ha regado.`;
+  } else if (!isCovered && futureRainPostponed && daysUntilWatering > 1) {
+    balconyNotice = `🌧️ Previsión de lluvia próxima: el riego se pospone aprovechando el agua de lluvia.`;
+  } else if (!isCovered && totalRainAbsorbed >= 5) {
+    balconyNotice = `🌧️ Lluvia acumulada (${Math.round(totalRainAbsorbed)} mm) ha hidratado el sustrato.`;
   }
 
   return {
@@ -579,6 +724,8 @@ export function calculatePotWatering(pot, weather, now = new Date(), customSetti
     balconyNotice,
     weatherRisks: risks,
     microclimate,
-    zone
+    zone,
+    totalRainAbsorbed: Math.round(totalRainAbsorbed * 10) / 10,
+    futureRainPostponed
   };
 }

@@ -53,11 +53,19 @@ export class WeatherService {
     // Si hay un escenario de simulación activo, devolver datos sintéticos
     if (simulatorService.isSimulated()) {
       const simData = simulatorService.getSimulatedData();
+      const allDays = this.generateSimulatedForecast(simData);
+      const todayStr = new Date().toISOString().split('T')[0];
+      const allDaysMap = {};
+      allDays.forEach(d => { allDaysMap[d.date] = d; });
+
       return {
         ...simData,
         locationName: simulatorService.getActiveScenario().name,
         isSimulated: true,
-        forecastDays: this.generateSimulatedForecast(simData)
+        allDays,
+        allDaysMap,
+        historicalDays: allDays.filter(d => d.date < todayStr),
+        forecastDays: allDays.filter(d => d.date >= todayStr)
       };
     }
 
@@ -77,9 +85,9 @@ export class WeatherService {
       }
     }
 
-    // Consulta real a la API de Open-Meteo
+    // Consulta real a la API de Open-Meteo (con histórico real de los últimos 7 días + 7 días previsión)
     const { latitude, longitude, name } = this.location;
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,et0_fao_evapotranspiration,weathercode&hourly=temperature_2m,relative_humidity_2m&timezone=auto`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&past_days=7&current_weather=true&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,et0_fao_evapotranspiration,weathercode&hourly=temperature_2m,relative_humidity_2m&timezone=auto`;
 
     try {
       const response = await fetch(url);
@@ -91,28 +99,45 @@ export class WeatherService {
       const current = data.current_weather || {};
       const daily = data.daily || {};
 
-      const currentTemp = current.temperature ?? 20;
-      const maxTemp = daily.temperature_2m_max?.[0] ?? currentTemp + 4;
-      const minTemp = daily.temperature_2m_min?.[0] ?? currentTemp - 5;
-      const rainSum = daily.precipitation_sum?.[0] ?? 0;
-      const rainProb = daily.precipitation_probability_max?.[0] ?? 0;
-      const et0 = daily.et0_fao_evapotranspiration?.[0] ?? 3.5;
-      const weatherCode = current.weathercode ?? 0;
+      const todayStr = new Date().toISOString().split('T')[0];
+      const allDays = [];
+      const allDaysMap = {};
+      let todayIndex = -1;
 
-      const forecastDays = [];
-      if (daily.time) {
-        for (let i = 0; i < Math.min(7, daily.time.length); i++) {
-          forecastDays.push({
-            date: daily.time[i],
-            maxTemp: daily.temperature_2m_max[i],
-            minTemp: daily.temperature_2m_min[i],
-            rainSum: daily.precipitation_sum[i],
-            rainProb: daily.precipitation_probability_max[i],
+      if (daily.time && Array.isArray(daily.time)) {
+        for (let i = 0; i < daily.time.length; i++) {
+          const dateStr = daily.time[i];
+          const dayItem = {
+            date: dateStr,
+            maxTemp: daily.temperature_2m_max?.[i] ?? 22,
+            minTemp: daily.temperature_2m_min?.[i] ?? 12,
+            rainSum: daily.precipitation_sum?.[i] ?? 0,
+            rainProb: daily.precipitation_probability_max?.[i] ?? 0,
             et0: daily.et0_fao_evapotranspiration ? daily.et0_fao_evapotranspiration[i] : 3.5,
             weatherCode: daily.weathercode ? daily.weathercode[i] : 0
-          });
+          };
+          allDays.push(dayItem);
+          allDaysMap[dateStr] = dayItem;
+          if (dateStr === todayStr && todayIndex === -1) {
+            todayIndex = i;
+          }
         }
       }
+
+      if (todayIndex === -1 && allDays.length > 0) {
+        todayIndex = Math.min(7, allDays.length - 1);
+      }
+
+      const currentTemp = current.temperature ?? (allDays[todayIndex]?.maxTemp ?? 20);
+      const maxTemp = (todayIndex >= 0 ? allDays[todayIndex]?.maxTemp : daily.temperature_2m_max?.[0]) ?? currentTemp + 4;
+      const minTemp = (todayIndex >= 0 ? allDays[todayIndex]?.minTemp : daily.temperature_2m_min?.[0]) ?? currentTemp - 5;
+      const rainSum = (todayIndex >= 0 ? allDays[todayIndex]?.rainSum : daily.precipitation_sum?.[0]) ?? 0;
+      const rainProb = (todayIndex >= 0 ? allDays[todayIndex]?.rainProb : daily.precipitation_probability_max?.[0]) ?? 0;
+      const et0 = (todayIndex >= 0 ? allDays[todayIndex]?.et0 : daily.et0_fao_evapotranspiration?.[0]) ?? 3.5;
+      const weatherCode = current.weathercode ?? (allDays[todayIndex]?.weatherCode ?? 0);
+
+      const historicalDays = allDays.filter(d => d.date < todayStr);
+      const forecastDays = allDays.filter(d => d.date >= todayStr);
 
       const formatted = {
         locationName: name,
@@ -126,6 +151,9 @@ export class WeatherService {
         et0,
         weatherCode,
         description: this.getWeatherDescription(weatherCode),
+        allDays,
+        allDaysMap,
+        historicalDays,
         forecastDays,
         isSimulated: false,
         updatedAt: new Date().toISOString()
@@ -151,14 +179,17 @@ export class WeatherService {
   generateSimulatedForecast(simData) {
     const days = [];
     const today = new Date();
-    for (let i = 0; i < 5; i++) {
+    // Generar 7 días pasados + hoy + 6 días futuros
+    for (let i = -7; i < 7; i++) {
       const d = new Date(today);
       d.setDate(d.getDate() + i);
+      const isPast = i < 0;
+      const isStorm = simData.id === 'rain_storm';
       days.push({
         date: d.toISOString().split('T')[0],
-        maxTemp: simData.maxTemp + (i > 0 ? (Math.random() * 2 - 1) : 0),
-        minTemp: simData.minTemp + (i > 0 ? (Math.random() * 2 - 1) : 0),
-        rainSum: simData.rainSum,
+        maxTemp: simData.maxTemp + (i !== 0 ? Math.round(Math.sin(i) * 1.5 * 10) / 10 : 0),
+        minTemp: simData.minTemp + (i !== 0 ? Math.round(Math.sin(i) * 1.5 * 10) / 10 : 0),
+        rainSum: isPast && isStorm ? 18 : simData.rainSum,
         rainProb: simData.rainProb,
         et0: simData.et0,
         weatherCode: simData.weatherCode
@@ -168,6 +199,27 @@ export class WeatherService {
   }
 
   getFallbackWeather() {
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const allDays = [];
+    const allDaysMap = {};
+    for (let i = -7; i <= 7; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() + i);
+      const dateStr = d.toISOString().split('T')[0];
+      const item = {
+        date: dateStr,
+        maxTemp: 24,
+        minTemp: 13,
+        rainSum: 0,
+        rainProb: 10,
+        et0: 3.4,
+        weatherCode: 1
+      };
+      allDays.push(item);
+      allDaysMap[dateStr] = item;
+    }
+
     return {
       locationName: this.location.name,
       currentTemp: 21,
@@ -178,7 +230,10 @@ export class WeatherService {
       et0: 3.4,
       weatherCode: 1,
       description: 'Clima templado (Estimación local)',
-      forecastDays: [],
+      allDays,
+      allDaysMap,
+      historicalDays: allDays.filter(d => d.date < todayStr),
+      forecastDays: allDays.filter(d => d.date >= todayStr),
       isSimulated: false,
       isFallback: true,
       updatedAt: new Date().toISOString()

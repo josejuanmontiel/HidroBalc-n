@@ -238,4 +238,81 @@ describe('Motor de Riego Agronómico para Terraza y Macetas', () => {
     expect(riskDefault.frostRisk).toBe('warning'); // 1.5°C por defecto es warning (<= 2.5) pero no danger (<= 0)
     expect(riskCustom.frostRisk).toBe('danger'); // con threshold custom (<= 2.0) se convierte en danger
   });
+
+  it('aplica el balance hídrico histórico día a día con lluvias pasadas observadas', () => {
+    const testNow = new Date('2026-05-15T12:00:00Z');
+    const outdoorPot = {
+      id: 'outdoor-pot-1',
+      name: 'Geranio Balconero',
+      plantType: 'flowering',
+      material: 'plastic',
+      size: 'medium',
+      sunExposure: 'partial_sun',
+      isCovered: false,
+      lastWatered: '2026-05-11T12:00:00Z' // 4 días atrás
+    };
+
+    const coveredPot = {
+      ...outdoorPot,
+      id: 'covered-pot-1',
+      isCovered: true
+    };
+
+    // Clima con histórico: el 2026-05-14 llovió 20 mm (ayer)
+    const weatherWithHistory = {
+      ...baseWeather,
+      allDaysMap: {
+        '2026-05-12': { date: '2026-05-12', maxTemp: 24, minTemp: 14, rainSum: 0, et0: 3.5 },
+        '2026-05-13': { date: '2026-05-13', maxTemp: 22, minTemp: 13, rainSum: 0, et0: 3.0 },
+        '2026-05-14': { date: '2026-05-14', maxTemp: 18, minTemp: 11, rainSum: 20, et0: 1.5 }, // Lluvia empapa ayer
+        '2026-05-15': { date: '2026-05-15', maxTemp: 23, minTemp: 13, rainSum: 0, et0: 3.2 }
+      }
+    };
+
+    const resOutdoor = calculatePotWatering(outdoorPot, weatherWithHistory, testNow);
+    const resCovered = calculatePotWatering(coveredPot, weatherWithHistory, testNow);
+
+    // La maceta al aire libre absorbió la lluvia de ayer y tiene humedad notable frente a la techada seca
+    expect(resOutdoor.totalRainAbsorbed).toBeGreaterThanOrEqual(20);
+    expect(resOutdoor.soilMoisturePercent).toBeGreaterThan(resCovered.soilMoisturePercent);
+    expect(resOutdoor.soilMoisturePercent).toBeGreaterThan(40);
+    expect(resCovered.soilMoisturePercent).toBeLessThan(20);
+  });
+
+  it('pospone el riego futuro si se prevén lluvias en macetas descubiertas', () => {
+    const testNow = new Date('2026-05-15T12:00:00Z');
+    const outdoorPot = {
+      id: 'outdoor-future',
+      name: 'Geranio exterior',
+      plantType: 'flowering',
+      material: 'plastic',
+      size: 'medium',
+      sunExposure: 'partial_sun',
+      isCovered: false,
+      lastWatered: '2026-05-14T08:00:00Z' // regada ayer mañana
+    };
+
+    const coveredPot = {
+      ...outdoorPot,
+      id: 'covered-future',
+      isCovered: true
+    };
+
+    // Previsión de lluvia abundante para mañana (16 de mayo)
+    const weatherWithFutureRain = {
+      ...baseWeather,
+      forecastDays: [
+        { date: '2026-05-15', maxTemp: 24, minTemp: 14, rainSum: 0, et0: 3.5 },
+        { date: '2026-05-16', maxTemp: 17, minTemp: 11, rainSum: 18, et0: 1.8 }, // Lluvia mañana
+        { date: '2026-05-17', maxTemp: 20, minTemp: 12, rainSum: 0, et0: 2.8 }
+      ]
+    };
+
+    const resOutdoor = calculatePotWatering(outdoorPot, weatherWithFutureRain, testNow);
+    const resCovered = calculatePotWatering(coveredPot, weatherWithFutureRain, testNow);
+
+    // La maceta descubierta proyecta que mañana se recargará con lluvia, posponiendo el riego
+    expect(resOutdoor.futureRainPostponed).toBe(true);
+    expect(resOutdoor.daysUntilWatering).toBeGreaterThan(resCovered.daysUntilWatering);
+  });
 });

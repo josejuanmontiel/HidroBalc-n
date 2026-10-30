@@ -264,10 +264,10 @@ class HidroBalconApp {
       <section class="weather-card">
         <div class="weather-snapshot">
           <div class="location-title">
-            <span class="location-name">
-              📍 <span id="loc-display-name">${this.weatherData?.locationName || 'Madrid'}</span>
+            <span class="location-name" title="Ubicación geográfica fija de tu terraza / hogar">
+              📍 <strong>Terraza:</strong> <span id="loc-display-name">${this.weatherData?.locationName || 'Madrid'}</span>
             </span>
-            <button id="btn-change-city" class="btn btn-sm" title="Cambiar Localidad">Cambiar</button>
+            <button id="btn-change-city" class="btn btn-sm" title="Cambiar ubicación geográfica fija de la terraza / hogar">Cambiar</button>
           </div>
           
           <div class="temp-hero">
@@ -3239,6 +3239,9 @@ class HidroBalconApp {
     const frostWarning = thresholds.frostWarning ?? 2.5;
     const heatModerate = thresholds.heatModerate ?? 31;
     const heatExtreme = thresholds.heatExtreme ?? 36;
+    const rainSoakThreshold = thresholds.rainSoakThreshold ?? 15;
+    const rainMinEffective = thresholds.rainMinEffective ?? 4;
+    const moistureThreshold = thresholds.moistureThreshold ?? 30;
 
     container.innerHTML = `
       <div class="modal-overlay active" id="config-params-modal">
@@ -3384,6 +3387,34 @@ class HidroBalconApp {
               </div>
             </div>
 
+            <!-- 6. UMBRALES DE LLUVIA Y BALANCE HÍDRICO (HISTÓRICO Y PREVISIÓN) -->
+            <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:0.75rem;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+                <strong style="color:#ffffff; font-size:0.85rem;">🌧️ Lluvia y Balance Hídrico (Macetas al descubierto):</strong>
+                <span style="font-size:0.7rem; color:#34d399; font-weight:700;">Editable</span>
+              </div>
+              <span style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.6rem;">
+                Calibra cuánta lluvia empapa las macetas exteriores y a qué porcentaje de humedad el motor proyecta el siguiente riego.
+              </span>
+              <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:0.6rem; font-size:0.72rem;">
+                <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.5rem;">
+                  <label style="color:#38bdf8; font-weight:700; display:block; margin-bottom:0.2rem;">🌧️ Lluvia empape total (&ge; mm):</label>
+                  <input type="number" step="1" min="1" max="50" id="config-rain-soak" class="form-input" value="${rainSoakThreshold}" style="padding:0.25rem 0.45rem; font-size:0.75rem;" />
+                  <span style="font-size:0.68rem; color:#94a3b8; margin-top:0.2rem; display:block;">Lluvia que satura el sustrato al 100%.</span>
+                </div>
+                <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.5rem;">
+                  <label style="color:#60a5fa; font-weight:700; display:block; margin-bottom:0.2rem;">💧 Lluvia mínima efectiva (&ge; mm):</label>
+                  <input type="number" step="0.5" min="0.5" max="20" id="config-rain-effective" class="form-input" value="${rainMinEffective}" style="padding:0.25rem 0.45rem; font-size:0.75rem;" />
+                  <span style="font-size:0.68rem; color:#94a3b8; margin-top:0.2rem; display:block;">Menor lluvia se evapora en follaje.</span>
+                </div>
+                <div style="background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.06); border-radius:6px; padding:0.5rem;">
+                  <label style="color:#f59e0b; font-weight:700; display:block; margin-bottom:0.2rem;">🎯 Umbral de necesidad (&le; %):</label>
+                  <input type="number" step="5" min="10" max="60" id="config-moisture-threshold" class="form-input" value="${moistureThreshold}" style="padding:0.25rem 0.45rem; font-size:0.75rem;" />
+                  <span style="font-size:0.68rem; color:#94a3b8; margin-top:0.2rem; display:block;">Humedad restante que dispara riego.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- BOTONES DE ACCIÓN DEL MODAL -->
             <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-top:0.5rem;">
               <button type="button" class="btn btn-sm btn-outline" id="btn-reset-config-defaults" style="color:#f87171; border-color:rgba(239,68,68,0.3);">
@@ -3449,12 +3480,15 @@ class HidroBalconApp {
         newSizes[id] = { dryingMultiplier: factor };
       });
 
-      // Recopilar thresholds climáticos
+      // Recopilar thresholds climáticos y de lluvia
       const newThresholds = {
         frostDanger: parseFloat(document.getElementById('config-frost-danger')?.value) || 0,
         frostWarning: parseFloat(document.getElementById('config-frost-warning')?.value) || 2.5,
         heatModerate: parseFloat(document.getElementById('config-heat-moderate')?.value) || 31,
-        heatExtreme: parseFloat(document.getElementById('config-heat-extreme')?.value) || 36
+        heatExtreme: parseFloat(document.getElementById('config-heat-extreme')?.value) || 36,
+        rainSoakThreshold: parseFloat(document.getElementById('config-rain-soak')?.value) || 15,
+        rainMinEffective: parseFloat(document.getElementById('config-rain-effective')?.value) || 4,
+        moistureThreshold: parseFloat(document.getElementById('config-moisture-threshold')?.value) || 30
       };
 
       const updatedSettings = {
@@ -4421,21 +4455,26 @@ class HidroBalconApp {
       <div class="modal-overlay active" id="city-modal">
         <div class="modal-content">
           <div class="modal-header">
-            <h3 class="modal-title">📍 Cambiar Localidad</h3>
+            <h3 class="modal-title">📍 Ubicación Geográfica de la Terraza</h3>
             <button class="modal-close" id="btn-close-city-modal">&times;</button>
           </div>
 
           <div style="display:flex; flex-direction:column; gap:1rem;">
-            <p style="font-size:0.82rem; color:var(--text-muted);">
-              Ubicación actual: <strong>${currentLoc.name}</strong> (${currentLoc.latitude.toFixed(2)}, ${currentLoc.longitude.toFixed(2)})
+            <div style="background:rgba(56,189,248,0.08); border-left:4px solid #38bdf8; border-radius:6px; padding:0.75rem 0.9rem; font-size:0.8rem; line-height:1.45; color:#e2e8f0;">
+              🏡 <strong>Ubicación Fija de tus Plantas:</strong><br>
+              Tus macetas físicas permanecen fijas en tu terraza o balcón aunque viajes con el móvil. Las previsiones meteorológicas y el balance de lluvias e insolación se calculan siempre para esta coordenada geográfica fija.
+            </div>
+
+            <p style="font-size:0.82rem; color:var(--text-muted); margin:0;">
+              Ubicación guardada de la terraza: <strong>${currentLoc.name}</strong> (${currentLoc.latitude.toFixed(2)}, ${currentLoc.longitude.toFixed(2)})
             </p>
 
-            <button class="btn btn-water" id="btn-gps-locate" style="justify-content:center;">
-              🧭 Usar mi ubicación GPS actual
+            <button class="btn btn-water" id="btn-gps-locate" style="justify-content:center; gap:0.5rem;">
+              🧭 Fijar con GPS actual (solo si estás físicamente en tu terraza)
             </button>
 
             <div style="position:relative; margin-top:0.5rem;">
-              <label class="form-label" for="city-search-input">O busca una ciudad / pueblo:</label>
+              <label class="form-label" for="city-search-input">O busca la ciudad / pueblo de tu hogar:</label>
               <div style="display:flex; gap:0.5rem;">
                 <input type="text" id="city-search-input" class="form-input" placeholder="Ej: Valencia, Sevilla, Granada..." style="flex:1;" />
                 <button class="btn btn-primary" id="btn-search-city">Buscar</button>
@@ -4459,7 +4498,7 @@ class HidroBalconApp {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         weatherService.saveLocation({
-          name: 'Mi Ubicación GPS',
+          name: 'Mi Terraza (GPS)',
           latitude: lat,
           longitude: lon,
           country: 'Local'
@@ -4467,7 +4506,7 @@ class HidroBalconApp {
         container.innerHTML = '';
         await this.refreshData(true);
         this.render();
-        this.showToast('Ubicación GPS establecida', 'success');
+        this.showToast('Ubicación fija de la terraza guardada con éxito', 'success');
       }, (err) => {
         alert('No se pudo obtener la posición GPS: ' + err.message);
       });
@@ -4499,7 +4538,7 @@ class HidroBalconApp {
           container.innerHTML = '';
           await this.refreshData(true);
           this.render();
-          this.showToast(`Localidad cambiada a ${item.name}`, 'success');
+          this.showToast(`Ubicación de terraza fijada en ${item.name}`, 'success');
         });
       });
     };
