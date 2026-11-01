@@ -3144,6 +3144,58 @@ body {
   font-style: italic;
 }
 
+/* Panel de Desglose de Factores Agronómicos */
+.analytics-factors-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.9rem 1.1rem;
+}
 
+.factors-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.65rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
 
+.factors-header h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
 
+.factors-badge {
+  font-size: 0.72rem;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-full);
+}
+
+.factors-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.factor-chip {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  padding: 0.35rem 0.65rem;
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.factor-chip-title {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}

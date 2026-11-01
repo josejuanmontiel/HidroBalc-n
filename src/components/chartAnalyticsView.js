@@ -26,6 +26,11 @@ export const chartAnalyticsView = {
 
     const timeline = generatePotAnalyticsTimeline(pot, weatherData, customSettings, logs);
     const summary = timeline.summary || {};
+    const factors = timeline.factors || {};
+
+    const diffDays = (factors.calibratedIntervalDays && factors.nominalIntervalDays)
+      ? Math.round((factors.calibratedIntervalDays - factors.nominalIntervalDays) * 10) / 10
+      : 0;
 
     return `
       <section class="analytics-view-container">
@@ -38,7 +43,7 @@ export const chartAnalyticsView = {
                 <h2>📊 Analítica de Riego & Secado</h2>
               </div>
               <p class="analytics-subtitle">
-                Evolución de humedad, temperaturas, lluvias registradas y reajustes del modelo adaptativo para cada maceta.
+                Evolución de humedad, temperaturas, tasa de evaporación y reajustes del modelo adaptativo para cada maceta.
               </p>
             </div>
 
@@ -71,13 +76,26 @@ export const chartAnalyticsView = {
             </div>
 
             <div class="kpi-card">
+              <div class="kpi-icon">📉</div>
+              <div class="kpi-content">
+                <div class="kpi-label">Velocidad de Secado Diaria</div>
+                <div class="kpi-value" style="color: #f59e0b;">
+                  ~${factors.avgDrainDaily ?? 10}% / día
+                </div>
+                <div class="kpi-sub">Intervalo: ~${factors.calibratedIntervalDays ?? 5} días</div>
+              </div>
+            </div>
+
+            <div class="kpi-card">
               <div class="kpi-icon">🧠</div>
               <div class="kpi-content">
-                <div class="kpi-label">Factor Adaptativo Calibrado</div>
-                <div class="kpi-value">
+                <div class="kpi-label">Reajuste Aprendido (Feedback)</div>
+                <div class="kpi-value" style="color: ${timeline.learnedFactor < 1 ? '#38bdf8' : (timeline.learnedFactor > 1 ? '#f59e0b' : '#ffffff')};">
                   ${timeline.learnedFactor}x
                 </div>
-                <div class="kpi-sub">${pot.calibrationCount ? `${pot.calibrationCount} calibración(es) activa(s)` : 'Factor nominal estándar'}</div>
+                <div class="kpi-sub">
+                  ${diffDays !== 0 ? `${diffDays > 0 ? `+${diffDays}` : diffDays} días vs modelo nominal` : 'Sin desviación sobre el modelo base'}
+                </div>
               </div>
             </div>
 
@@ -89,22 +107,39 @@ export const chartAnalyticsView = {
                   ${timeline.nextWateringExpected ? timeline.nextWateringExpected : 'Hoy / Inminente'}
                 </div>
                 <div class="kpi-sub">
-                  ${pot.calc?.daysUntilWatering ? `En ~${Math.ceil(pot.calc.daysUntilWatering)} días` : 'Listo para regar'}
+                  ${timeline.nextTheoreticalExpected ? `Teórico sin calibrar: ${timeline.nextTheoreticalExpected}` : 'Listo para regar'}
                 </div>
               </div>
             </div>
+          </div>
+        </div>
 
-            <div class="kpi-card">
-              <div class="kpi-icon">🛡️</div>
-              <div class="kpi-content">
-                <div class="kpi-label">Ubicación & Heladas</div>
-                <div class="kpi-value" style="font-size: 1.05rem;">
-                  ${timeline.isCovered ? '🏠 Bajo Techo' : '🌧️ Cielo Abierto'}
-                </div>
-                <div class="kpi-sub">
-                  ${summary.frostDaysCount > 0 ? `⚠️ ${summary.frostDaysCount} día(s) con riesgo helada` : 'Sin heladas inminentes'}
-                </div>
-              </div>
+        <!-- PANEL DE DESGLOSE DE PARÁMETROS AGRONÓMICOS -->
+        <div class="analytics-factors-card">
+          <div class="factors-header">
+            <h4>🌿 Parámetros de Secado de la Maceta</h4>
+            <span class="factors-badge">${factors.containerDescription || 'Maceta estándar'}</span>
+          </div>
+          <div class="factors-chips-row">
+            <div class="factor-chip" title="Demanda hídrica intrínseca de la especie botánica">
+              <span class="factor-chip-title">Especie:</span>
+              <strong>${factors.plantLabel || 'Planta'}</strong> (${factors.plantDemand}x)
+            </div>
+            <div class="factor-chip" title="Porosidad y evaporación del material">
+              <span class="factor-chip-title">Material:</span>
+              <strong>${factors.materialLabel || 'Plástico'}</strong> (${factors.materialMultiplier}x)
+            </div>
+            <div class="factor-chip" title="Inercia térmica según volumen de sustrato y dimensiones">
+              <span class="factor-chip-title">Inercia sustrato:</span>
+              <strong>${pot.substrateLiters ? `${pot.substrateLiters} Litros` : (pot.container?.totalLiters ? `${pot.container.totalLiters}L total` : 'Normal')}</strong> (${factors.sizeMultiplier}x)
+            </div>
+            <div class="factor-chip" title="Insolación y microclima del balcón">
+              <span class="factor-chip-title">Sol / Sombra:</span>
+              <strong>${factors.sunLabel || 'Sol'}</strong> (${factors.sunMultiplier}x)
+            </div>
+            <div class="factor-chip" title="Factor aprendido por riegos reales anteriores">
+              <span class="factor-chip-title">Calibración usuario:</span>
+              <strong style="color: #38bdf8;">${factors.learnedFactor}x</strong>
             </div>
           </div>
         </div>
@@ -113,8 +148,8 @@ export const chartAnalyticsView = {
         <div class="analytics-chart-card">
           <div class="chart-toolbar">
             <div class="chart-toolbar-title">
-              <strong>Curva Multieje Temporal</strong>
-              <span class="chart-hint">💡 Usa la rueda del ratón o pellizca en móvil para hacer <strong>Zoom</strong> y arrastra para desplazarte</span>
+              <strong>Curva Multieje Temporal: Secado Calibrado vs Modelo Teórico</strong>
+              <span class="chart-hint">💡 Compara la línea verde (tu maceta calibrada) vs la línea gris discontinua (modelo teórico sin ajustar). Usa la rueda o arrastra para hacer Zoom.</span>
             </div>
             <div class="chart-toolbar-actions">
               <button id="btn-chart-reset-zoom" class="btn btn-sm" title="Restablecer vista inicial">
@@ -128,12 +163,14 @@ export const chartAnalyticsView = {
           </div>
 
           <div class="chart-legend-custom">
-            <div class="legend-item"><span class="legend-dot" style="background:#10b981;"></span> Humedad Sustrato (%)</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#10b981;"></span> Humedad Calibrada (%)</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#94a3b8; border-top: 2px dashed #94a3b8;"></span> Modelo Teórico Base (%)</div>
             <div class="legend-item"><span class="legend-dot" style="background:#ef4444; border-top: 2px dashed #ef4444;"></span> Umbral de Riego (${timeline.threshold}%)</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span> Temp. Máxima (°C)</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#38bdf8;"></span> Temp. Mínima (°C)</div>
-            <div class="legend-item"><span class="legend-dot" style="background:rgba(14, 165, 233, 0.5);"></span> Lluvia Acumulada (mm)</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#a855f7;"></span> 💧 Riegos & Reajustes</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span> Temp. Máx (°C)</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#38bdf8;"></span> Temp. Mín (°C)</div>
+            <div class="legend-item"><span class="legend-dot" style="background:rgba(245, 158, 11, 0.4);"></span> Tasa Evaporación (%/día)</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#3b82f6;"></span> 💧 Riegos Reales</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#a855f7;"></span> ⚙️ Reajustes</div>
           </div>
         </div>
 
@@ -155,7 +192,7 @@ export const chartAnalyticsView = {
                   <div class="event-body">
                     <div class="event-badge badge-reajuste">⚙️ REAJUSTE DE MODELO</div>
                     <div class="event-desc">${r.desc}</div>
-                    ${r.note ? `<div class="event-note">Nota: ${r.note}</div>` : ''}
+                    ${r.note ? `<div class="event-note">Detalle: ${r.note}</div>` : ''}
                   </div>
                 </div>
               `).join('')}
@@ -164,7 +201,7 @@ export const chartAnalyticsView = {
                 <div class="event-item event-watering">
                   <div class="event-date">📅 ${d.date}</div>
                   <div class="event-body">
-                    <div class="event-badge badge-water">💧 RIEGO EFECTUADO</div>
+                    <div class="event-badge badge-water">${d.wateringEvent.isGeneral ? '🌐 RIEGO GENERAL TERRAZA' : '💧 RIEGO EFECTUADO'}</div>
                     <div class="event-desc">
                       Aporte de agua registrado. Humedad reiniciada al 100% de capacidad de campo.
                     </div>
@@ -193,13 +230,14 @@ export const chartAnalyticsView = {
       return `${parts[2]}/${parts[1]}`;
     });
 
-    const moistureData = timeline.days.map(d => d.moisturePercent);
+    const calibratedMoistureData = timeline.days.map(d => d.moisturePercent);
+    const theoreticalMoistureData = timeline.days.map(d => d.theoreticalMoisturePercent);
+    const drainData = timeline.days.map(d => d.dayDrain);
     const thresholdData = timeline.days.map(() => timeline.threshold);
     const maxTempData = timeline.days.map(d => d.maxTemp);
     const minTempData = timeline.days.map(d => d.minTemp);
-    const rainData = timeline.days.map(d => d.rainSum);
 
-    // Puntos especiales para riegos reales y reajustes
+    // Puntos especiales para riegos reales y proyectados
     const wateringPoints = timeline.days.map(d => {
       if (d.wateringEvent && d.wateringEvent.type === 'real') {
         return d.moisturePercent;
@@ -219,10 +257,10 @@ export const chartAnalyticsView = {
       data: {
         labels,
         datasets: [
-          // 1. Curva de Humedad del Sustrato
+          // 1. Curva de Humedad Calibrada (Real / Adaptada)
           {
-            label: 'Humedad Sustrato (%)',
-            data: moistureData,
+            label: 'Humedad Calibrada (%)',
+            data: calibratedMoistureData,
             borderColor: '#10b981',
             backgroundColor: 'rgba(16, 185, 129, 0.12)',
             fill: true,
@@ -233,7 +271,21 @@ export const chartAnalyticsView = {
             pointBackgroundColor: '#10b981',
             borderWidth: 2.5
           },
-          // 2. Umbral de Riego
+          // 2. Curva Teórica Base (Sin calibración, para ver el reajuste)
+          {
+            label: 'Modelo Teórico Base (%)',
+            data: theoreticalMoistureData,
+            borderColor: '#94a3b8',
+            borderDash: [6, 4],
+            fill: false,
+            tension: 0.35,
+            yAxisID: 'yMoisture',
+            pointRadius: 2,
+            pointHoverRadius: 5,
+            pointBackgroundColor: '#94a3b8',
+            borderWidth: 1.8
+          },
+          // 3. Umbral de Riego
           {
             label: `Umbral de Riego (${timeline.threshold}%)`,
             data: thresholdData,
@@ -244,7 +296,7 @@ export const chartAnalyticsView = {
             yAxisID: 'yMoisture',
             borderWidth: 1.8
           },
-          // 3. Riego Real Registrado (Puntos)
+          // 4. Riego Real Registrado (Puntos)
           {
             label: 'Riego Real Efectuado',
             data: wateringPoints,
@@ -257,7 +309,7 @@ export const chartAnalyticsView = {
             pointStyle: 'circle',
             yAxisID: 'yMoisture'
           },
-          // 4. Riego Proyectado (Puntos)
+          // 5. Riego Proyectado (Puntos)
           {
             label: 'Riego Previsto (Algoritmo)',
             data: projectedPoints,
@@ -270,7 +322,18 @@ export const chartAnalyticsView = {
             pointStyle: 'rectRot',
             yAxisID: 'yMoisture'
           },
-          // 5. Temperatura Máxima
+          // 6. Tasa de Evaporación / Secado Diaria (Barras transparentes)
+          {
+            type: 'bar',
+            label: 'Tasa Secado (%/día)',
+            data: drainData,
+            backgroundColor: 'rgba(245, 158, 11, 0.25)',
+            borderColor: 'rgba(245, 158, 11, 0.6)',
+            borderWidth: 1,
+            yAxisID: 'yDrain',
+            barPercentage: 0.35
+          },
+          // 7. Temperatura Máxima
           {
             label: 'Temp. Máx (°C)',
             data: maxTempData,
@@ -279,9 +342,9 @@ export const chartAnalyticsView = {
             tension: 0.3,
             yAxisID: 'yTemp',
             pointRadius: 3,
-            borderWidth: 1.8
+            borderWidth: 1.5
           },
-          // 6. Temperatura Mínima
+          // 8. Temperatura Mínima
           {
             label: 'Temp. Mín (°C)',
             data: minTempData,
@@ -290,18 +353,7 @@ export const chartAnalyticsView = {
             tension: 0.3,
             yAxisID: 'yTemp',
             pointRadius: 3,
-            borderWidth: 1.8
-          },
-          // 7. Lluvia Diaria (Barras)
-          {
-            type: 'bar',
-            label: 'Lluvia Diaria (mm)',
-            data: rainData,
-            backgroundColor: 'rgba(14, 165, 233, 0.45)',
-            borderColor: '#0284c7',
-            borderWidth: 1,
-            yAxisID: 'yRain',
-            barPercentage: 0.4
+            borderWidth: 1.5
           }
         ]
       },
@@ -314,7 +366,7 @@ export const chartAnalyticsView = {
         },
         plugins: {
           legend: {
-            display: false // Usamos la leyenda HTML propia estilizada
+            display: false
           },
           tooltip: {
             backgroundColor: 'rgba(15, 23, 42, 0.95)',
@@ -337,6 +389,12 @@ export const chartAnalyticsView = {
                 const idx = items[0].dataIndex;
                 const d = timeline.days[idx];
                 const extra = [];
+
+                extra.push(`💧 Secado hoy: -${d.dayDrain}% de humedad`);
+                if (d.theoreticalMoisturePercent !== d.moisturePercent) {
+                  const diff = d.moisturePercent - d.theoreticalMoisturePercent;
+                  extra.push(`🧠 Efecto del Reajuste: ${diff > 0 ? `+${diff}% más húmeda` : `${diff}% menos húmeda`} vs modelo base`);
+                }
 
                 if (d.isFrostDay) {
                   extra.push(`❄️ Riesgo de Helada: Mínima ${d.minTemp}°C`);
@@ -420,11 +478,11 @@ export const chartAnalyticsView = {
               color: '#f59e0b'
             }
           },
-          yRain: {
+          yDrain: {
             type: 'linear',
             position: 'right',
             min: 0,
-            max: 40,
+            max: 35,
             display: false,
             grid: {
               drawOnChartArea: false
