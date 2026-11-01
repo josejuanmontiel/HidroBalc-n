@@ -104,11 +104,18 @@ class HidroBalconApp {
     this.potInitials = {};
     this.potDoses = {};
     for (const pot of this.pots) {
-      // Asociar contenedor si existe
+      // Asociar contenedor si existe y sincronizar propiedades efectivas del contenedor común
       if (pot.containerId) {
         pot.container = this.containers.find(c => c.id === pot.containerId) || null;
+        if (pot.container) {
+          pot.effectiveMaterial = pot.container.material;
+          const sections = Math.max(1, pot.container.sections || 1);
+          pot.effectiveSubstrateLiters = Math.round(((pot.container.totalLiters || 9) / sections) * 10) / 10;
+        }
       } else {
         pot.container = null;
+        pot.effectiveMaterial = pot.material;
+        pot.effectiveSubstrateLiters = pot.substrateLiters;
       }
 
       // Asociar zona si existe directamente o mediante el contenedor
@@ -4255,6 +4262,11 @@ class HidroBalconApp {
       const notes = document.getElementById('input-notes').value.trim();
 
       let targetPotId = editId;
+      const selectedContainer = containerId ? (this.containers || db.getContainers()).find(c => c.id === containerId) : null;
+      const effectiveMaterial = selectedContainer ? selectedContainer.material : material;
+      const effectiveLiters = selectedContainer
+        ? Math.round(((selectedContainer.totalLiters || 9) / Math.max(1, selectedContainer.sections || 1)) * 10) / 10
+        : calculatedSubstrateLiters;
 
       if (isEdit) {
         db.updatePot(editId, {
@@ -4265,16 +4277,16 @@ class HidroBalconApp {
           containerId,
           zoneId,
           plantType,
-          material,
-          shape,
-          dimensions,
-          substrateLiters: calculatedSubstrateLiters,
-          size,
-          sunExposure,
-          isCovered,
+          material: effectiveMaterial,
+          shape: selectedContainer ? selectedContainer.shape : shape,
+          dimensions: selectedContainer ? selectedContainer.dimensions : dimensions,
+          substrateLiters: effectiveLiters,
+          size: selectedContainer ? (effectiveLiters <= 3 ? 'small' : (effectiveLiters <= 10 ? 'medium' : (effectiveLiters <= 25 ? 'large' : 'planter'))) : size,
+          sunExposure: selectedContainer ? selectedContainer.sunExposure : sunExposure,
+          isCovered: selectedContainer ? selectedContainer.isCovered : isCovered,
           notes
         });
-        this.showToast('Maceta actualizada', 'success');
+        this.showToast('Planta actualizada y sincronizada con su jardinera', 'success');
       } else {
         const newPot = db.addPot({
           name,
@@ -4284,17 +4296,17 @@ class HidroBalconApp {
           containerId,
           zoneId,
           plantType,
-          material,
-          shape,
-          dimensions,
-          substrateLiters: calculatedSubstrateLiters,
-          size,
-          sunExposure,
-          isCovered,
+          material: effectiveMaterial,
+          shape: selectedContainer ? selectedContainer.shape : shape,
+          dimensions: selectedContainer ? selectedContainer.dimensions : dimensions,
+          substrateLiters: effectiveLiters,
+          size: selectedContainer ? (effectiveLiters <= 3 ? 'small' : (effectiveLiters <= 10 ? 'medium' : (effectiveLiters <= 25 ? 'large' : 'planter'))) : size,
+          sunExposure: selectedContainer ? selectedContainer.sunExposure : sunExposure,
+          isCovered: selectedContainer ? selectedContainer.isCovered : isCovered,
           notes
         });
         targetPotId = newPot.id;
-        this.showToast('Nueva maceta añadida ✨', 'success');
+        this.showToast('Nueva planta añadida ✨', 'success');
       }
 
       if (compressedPhotoData && targetPotId) {

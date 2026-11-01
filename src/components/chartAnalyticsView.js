@@ -131,7 +131,7 @@ export const chartAnalyticsView = {
             </div>
             <div class="factor-chip" title="Inercia térmica según volumen de sustrato y dimensiones">
               <span class="factor-chip-title">Inercia sustrato:</span>
-              <strong>${pot.substrateLiters ? `${pot.substrateLiters} Litros` : (pot.container?.totalLiters ? `${pot.container.totalLiters}L total` : 'Normal')}</strong> (${factors.sizeMultiplier}x)
+              <strong>${pot.container ? `${Math.round(((pot.container.totalLiters || 9) / Math.max(1, pot.container.sections || 1)) * 10) / 10}L (en ${pot.container.name})` : (pot.substrateLiters ? `${pot.substrateLiters} Litros` : 'Estándar')}</strong> (${factors.sizeMultiplier}x)
             </div>
             <div class="factor-chip" title="Insolación y microclima del balcón">
               <span class="factor-chip-title">Sol / Sombra:</span>
