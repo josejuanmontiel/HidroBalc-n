@@ -3049,6 +3049,29 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.6rem;
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.legend-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.legend-item.legend-disabled {
+  opacity: 0.35;
+  text-decoration: line-through;
+  filter: grayscale(0.8);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
 .legend-dot {
@@ -3056,6 +3079,7 @@ body {
   height: 12px;
   border-radius: 3px;
   display: inline-block;
+  flex-shrink: 0;
 }
 
 .events-card-header h3 {

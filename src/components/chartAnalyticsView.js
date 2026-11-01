@@ -162,15 +162,15 @@ export const chartAnalyticsView = {
             <canvas id="pot-analytics-chart"></canvas>
           </div>
 
-          <div class="chart-legend-custom">
-            <div class="legend-item"><span class="legend-dot" style="background:#10b981;"></span> Humedad Calibrada (%)</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#94a3b8; border-top: 2px dashed #94a3b8;"></span> Modelo Teórico Base (%)</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#ef4444; border-top: 2px dashed #ef4444;"></span> Umbral de Riego (${timeline.threshold}%)</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span> Temp. Máx (°C)</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#38bdf8;"></span> Temp. Mín (°C)</div>
-            <div class="legend-item"><span class="legend-dot" style="background:rgba(245, 158, 11, 0.4);"></span> Tasa Evaporación (%/día)</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#3b82f6;"></span> 💧 Riegos Reales</div>
-            <div class="legend-item"><span class="legend-dot" style="background:#a855f7;"></span> ⚙️ Reajustes</div>
+          <div class="chart-legend-custom" id="chart-legend-toggle-wrap">
+            <button type="button" class="legend-item" data-dataset="0" title="Clic para ocultar/mostrar"><span class="legend-dot" style="background:#10b981;"></span> Humedad Calibrada (%)</button>
+            <button type="button" class="legend-item" data-dataset="1" title="Clic para ocultar/mostrar"><span class="legend-dot" style="background:#94a3b8; border-top: 2px dashed #94a3b8;"></span> Modelo Teórico Base (%)</button>
+            <button type="button" class="legend-item" data-dataset="2" title="Clic para ocultar/mostrar"><span class="legend-dot" style="background:#ef4444; border-top: 2px dashed #ef4444;"></span> Umbral de Riego (${timeline.threshold}%)</button>
+            <button type="button" class="legend-item" data-dataset="5" title="Clic para ocultar/mostrar"><span class="legend-dot" style="background:rgba(245, 158, 11, 0.4);"></span> Tasa Evaporación (%/día)</button>
+            <button type="button" class="legend-item" data-dataset="6" title="Clic para ocultar/mostrar"><span class="legend-dot" style="background:#f59e0b;"></span> Temp. Máx (°C)</button>
+            <button type="button" class="legend-item" data-dataset="7" title="Clic para ocultar/mostrar"><span class="legend-dot" style="background:#38bdf8;"></span> Temp. Mín (°C)</button>
+            <button type="button" class="legend-item" data-dataset="3" title="Clic para ocultar/mostrar"><span class="legend-dot" style="background:#3b82f6;"></span> 💧 Riegos Reales</button>
+            <button type="button" class="legend-item" data-dataset="4" title="Clic para ocultar/mostrar"><span class="legend-dot" style="background:#a855f7;"></span> ⚙️ Riegos Previstos</button>
           </div>
         </div>
 
@@ -496,6 +496,24 @@ export const chartAnalyticsView = {
       if (currentChartInstance) {
         currentChartInstance.resetZoom();
       }
+    });
+
+    // Toggle interactivo de visibilidad de datasets al pulsar en las leyendas
+    document.querySelectorAll('#chart-legend-toggle-wrap .legend-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.dataset, 10);
+        if (currentChartInstance && !isNaN(idx)) {
+          const isVisible = currentChartInstance.isDatasetVisible(idx);
+          currentChartInstance.setDatasetVisibility(idx, !isVisible);
+          currentChartInstance.update();
+
+          if (isVisible) {
+            btn.classList.add('legend-disabled');
+          } else {
+            btn.classList.remove('legend-disabled');
+          }
+        }
+      });
     });
   }
 };

@@ -148,15 +148,18 @@ export function generatePotAnalyticsTimeline(pot, weather, customSettings = {}, 
     const isFuture = dateStr > todayStr;
 
     // 1. Tasa de drenaje del día (Calibrada vs Teórica)
+    // El secado de campo útil abarca desde el 100% de saturación hasta el umbral de marchitez/riego (100 - moistureThreshold, típicamente 70%)
+    const usableMoistureRange = Math.max(20, 100 - moistureThreshold);
     const dayEnv = calculateEnvironmentalEvaporation(day, customSettings);
 
     const dayCompositeCalibrated = calibratedBaseDryingFactor * dayEnv;
     const dayEffIntervalCalibrated = Math.max(0.8, baseInterval / dayCompositeCalibrated);
-    const dayDrainCalibrated = 100 / dayEffIntervalCalibrated;
+    // Tasa real de pérdida de humedad del sustrato en 24h (%/día)
+    const dayDrainCalibrated = Math.min(usableMoistureRange, usableMoistureRange / dayEffIntervalCalibrated);
 
     const dayCompositeTheoretical = theoreticalBaseDryingFactor * dayEnv;
     const dayEffIntervalTheoretical = Math.max(0.8, baseInterval / dayCompositeTheoretical);
-    const dayDrainTheoretical = 100 / dayEffIntervalTheoretical;
+    const dayDrainTheoretical = Math.min(usableMoistureRange, usableMoistureRange / dayEffIntervalTheoretical);
 
     // 2. Comprobar si hubo un riego real registrado en esta fecha
     const logsOnDay = potLogsByDate[dateStr] || [];
