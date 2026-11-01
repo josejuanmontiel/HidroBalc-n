@@ -26,11 +26,13 @@ import { wasmEngineService } from './services/wasmEngineService.js';
 import { backupService } from './services/backupService.js';
 import { plantApiService } from './services/plantApiService.js';
 import { CATEGORIES_LABELS } from './data/spanishPlantsCatalog.js';
+import { chartAnalyticsView } from './components/chartAnalyticsView.js';
 
 class HidroBalconApp {
   constructor() {
     this.currentTab = 'all'; // 'all' | 'due' | 'frost' | 'good'
-    this.activeView = 'balcony'; // 'balcony' | 'tasks'
+    this.activeView = 'balcony'; // 'balcony' | 'tasks' | 'analytics'
+    this.selectedAnalyticsPotId = null;
     this.taskDateFilter = this.getTodayDateStr();
     this.weatherData = null;
     this.pots = [];
@@ -198,6 +200,9 @@ class HidroBalconApp {
             <button id="btn-view-tasks" class="btn ${this.activeView === 'tasks' ? 'btn-primary' : ''}">
               📋 Tareas (${dueCount})
             </button>
+            <button id="btn-view-analytics" class="btn ${this.activeView === 'analytics' ? 'btn-primary' : ''}" title="Telemetría, gráficas de humedad, previsiones y reajustes">
+              📊 Analítica
+            </button>
             <button id="btn-open-config" class="btn btn-sm" title="Parámetros agronómicos, horas de sol e inercia hídrica">
               ⚙️ Parámetros
             </button>
@@ -237,10 +242,18 @@ class HidroBalconApp {
           </div>
         </section>
 
-        <!-- MAIN VIEW CONDITIONAL: BALCONY OR TASKS -->
+        <!-- MAIN VIEW CONDITIONAL: BALCONY, TASKS OR ANALYTICS -->
         ${this.activeView === 'tasks'
           ? this.renderTasksView(calculatedPots, dayGroups)
-          : this.renderBalconyView(calculatedPots, risks, dayGroups)
+          : (this.activeView === 'analytics'
+              ? chartAnalyticsView.renderAnalyticsView(
+                  this.selectedAnalyticsPotId || (calculatedPots[0] ? calculatedPots[0].id : null),
+                  calculatedPots,
+                  this.weatherData,
+                  this.settings || {}
+                )
+              : this.renderBalconyView(calculatedPots, risks, dayGroups)
+            )
         }
       </div>
 
@@ -778,6 +791,7 @@ class HidroBalconApp {
                 <button class="btn btn-sm btn-action-finger" data-id="${pot.id}" title="Prueba del dedo">👉</button>
                 <button class="btn btn-sm btn-action-photos" data-id="${pot.id}" title="Fotos y evolución">📸</button>
                 <button class="btn btn-sm btn-action-edit" data-id="${pot.id}" title="Editar maceta">✏️</button>
+                <button class="btn btn-sm btn-action-analytics" data-id="${pot.id}" title="Ver gráfica de predicción, humedad y reajustes">📊</button>
               </div>
             </div>
           `;
@@ -897,6 +911,9 @@ class HidroBalconApp {
           <button class="btn btn-sm btn-action-edit" data-id="${pot.id}" title="Editar maceta">
             ✏️
           </button>
+          <button class="btn btn-sm btn-action-analytics" data-id="${pot.id}" title="Ver gráfica de predicción, humedad y reajustes">
+            📊
+          </button>
           <button class="btn btn-sm btn-danger btn-action-delete" data-id="${pot.id}" title="Eliminar maceta">
             🗑️
           </button>
@@ -917,7 +934,17 @@ class HidroBalconApp {
       this.render();
     });
 
+    document.getElementById('btn-view-analytics')?.addEventListener('click', () => {
+      this.activeView = 'analytics';
+      this.render();
+    });
+
     document.getElementById('btn-back-to-balcony')?.addEventListener('click', () => {
+      this.activeView = 'balcony';
+      this.render();
+    });
+
+    document.getElementById('btn-analytics-back')?.addEventListener('click', () => {
       this.activeView = 'balcony';
       this.render();
     });
@@ -1207,6 +1234,15 @@ class HidroBalconApp {
         return;
       }
 
+      const btnAnalytics = e.target.closest('.btn-action-analytics');
+      if (btnAnalytics) {
+        const id = btnAnalytics.dataset.id;
+        this.selectedAnalyticsPotId = id;
+        this.activeView = 'analytics';
+        this.render();
+        return;
+      }
+
       const btnDelete = e.target.closest('.btn-action-delete');
       if (btnDelete) {
         const id = btnDelete.dataset.id;
@@ -1223,8 +1259,33 @@ class HidroBalconApp {
     const grid = document.getElementById('pots-grid');
     if (grid) grid.addEventListener('click', handlePotActionClick);
 
+    const compactTable = document.querySelector('.pots-compact-table');
+    if (compactTable) compactTable.addEventListener('click', handlePotActionClick);
+
     const tasksList = document.querySelector('.tasks-checklist');
     if (tasksList) tasksList.addEventListener('click', handlePotActionClick);
+
+    // Si estamos en la vista de Analítica, inicializar gráfico Chart.js y listener de dropdown
+    if (this.activeView === 'analytics') {
+      const potSelect = document.getElementById('analytics-pot-select');
+      const targetPotId = this.selectedAnalyticsPotId || potSelect?.value || (calculatedPots[0] ? calculatedPots[0].id : null);
+      const targetPot = calculatedPots.find(p => p.id === targetPotId) || calculatedPots[0];
+
+      if (targetPot) {
+        const logs = db.getLogs();
+        import('./services/analyticsService.js').then(({ generatePotAnalyticsTimeline }) => {
+          const timeline = generatePotAnalyticsTimeline(targetPot, this.weatherData, this.settings || {}, logs);
+          setTimeout(() => {
+            chartAnalyticsView.initChart(timeline);
+          }, 0);
+        });
+      }
+
+      potSelect?.addEventListener('change', (e) => {
+        this.selectedAnalyticsPotId = e.target.value;
+        this.render();
+      });
+    }
   }
 
   // ================= MODAL PRUEBA DEL DEDO & CALIBRACIÓN WASM ================= //
