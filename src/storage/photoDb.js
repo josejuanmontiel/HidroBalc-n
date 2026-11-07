@@ -10,6 +10,7 @@ const STORE_NAME = 'plant_photos';
 
 export class PhotoDatabase {
   constructor() {
+    this.memoryStore = new Map();
     this.dbPromise = this.initDB();
   }
 
@@ -90,15 +91,12 @@ export class PhotoDatabase {
   }
 
   /**
-   * Guarda una foto para una maceta
+   * Guarda una foto para una maceta o para la galería común
    */
-  async addPhoto({ potId, dataUrl, note = '', tag = '', date = new Date().toISOString(), isCover = false, isInitial = false }) {
-    const db = await this.dbPromise;
-    if (!db) return null;
-
+  async addPhoto({ potId = null, dataUrl, note = '', tag = '', date = new Date().toISOString(), isCover = false, isInitial = false }) {
     const photo = {
       id: `photo-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-      potId,
+      potId: potId || null,
       dataUrl,
       note,
       tag,
@@ -107,11 +105,25 @@ export class PhotoDatabase {
       isInitial: Boolean(isInitial)
     };
 
+    const db = await this.dbPromise;
+    if (!db) {
+      if ((isCover || isInitial) && potId) {
+        for (const item of this.memoryStore.values()) {
+          if (item.potId === potId) {
+            if (isCover) item.isCover = false;
+            if (isInitial) item.isInitial = false;
+          }
+        }
+      }
+      this.memoryStore.set(photo.id, photo);
+      return photo;
+    }
+
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
 
-      if (isCover || isInitial) {
+      if ((isCover || isInitial) && potId) {
         const index = store.index('potId');
         const req = index.openCursor(IDBKeyRange.only(potId));
         req.onsuccess = (e) => {
@@ -146,7 +158,11 @@ export class PhotoDatabase {
    */
   async getPhotosByPot(potId) {
     const db = await this.dbPromise;
-    if (!db) return [];
+    if (!db) {
+      const photos = Array.from(this.memoryStore.values()).filter(p => p.potId === potId);
+      photos.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return photos;
+    }
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
@@ -179,7 +195,7 @@ export class PhotoDatabase {
    */
   async deletePhoto(photoId) {
     const db = await this.dbPromise;
-    if (!db) return false;
+    if (!db) return this.memoryStore.delete(photoId);
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -205,7 +221,16 @@ export class PhotoDatabase {
    */
   async setCoverPhoto(potId, photoId) {
     const db = await this.dbPromise;
-    if (!db) return false;
+    if (!db) {
+      let found = false;
+      for (const item of this.memoryStore.values()) {
+        if (item.potId === potId) {
+          item.isCover = (item.id === photoId);
+          if (item.isCover) found = true;
+        }
+      }
+      return found;
+    }
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -233,7 +258,18 @@ export class PhotoDatabase {
    */
   async toggleInstructionPhoto(photoId) {
     const db = await this.dbPromise;
-    if (!db) return false;
+    if (!db) {
+      const photo = this.memoryStore.get(photoId);
+      if (!photo) return false;
+      const isCurrentlyInstruction = Boolean(photo.isInstruction || (photo.tag && photo.tag.includes('Etiqueta')) || (photo.note && (photo.note.includes('Etiqueta') || photo.note.includes('Instrucciones'))));
+      const newStatus = !isCurrentlyInstruction;
+      photo.isInstruction = newStatus;
+      photo.tag = newStatus ? 'Etiqueta/Instrucciones' : (photo.tag === 'Etiqueta/Instrucciones' || photo.tag === 'Etiqueta' ? '' : photo.tag);
+      photo.note = newStatus 
+        ? ((photo.note && (photo.note.includes('Etiqueta') || photo.note.includes('Instrucciones'))) ? photo.note : '🏷️ Etiqueta / Instrucciones de cuidado')
+        : (photo.note && (photo.note.includes('Etiqueta') || photo.note.includes('Instrucciones')) ? 'Progreso habitual' : photo.note);
+      return true;
+    }
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -273,7 +309,16 @@ export class PhotoDatabase {
    */
   async setInitialPhoto(potId, photoId) {
     const db = await this.dbPromise;
-    if (!db) return false;
+    if (!db) {
+      let found = false;
+      for (const item of this.memoryStore.values()) {
+        if (item.potId === potId) {
+          item.isInitial = (item.id === photoId);
+          if (item.isInitial) found = true;
+        }
+      }
+      return found;
+    }
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -301,7 +346,12 @@ export class PhotoDatabase {
    */
   async updatePhoto(photoId, updates = {}) {
     const db = await this.dbPromise;
-    if (!db) return false;
+    if (!db) {
+      const photo = this.memoryStore.get(photoId);
+      if (!photo) return false;
+      Object.assign(photo, updates);
+      return true;
+    }
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -330,7 +380,11 @@ export class PhotoDatabase {
    */
   async getAllPhotos() {
     const db = await this.dbPromise;
-    if (!db) return [];
+    if (!db) {
+      const photos = Array.from(this.memoryStore.values());
+      photos.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return photos;
+    }
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
@@ -354,7 +408,25 @@ export class PhotoDatabase {
    */
   async copyPhotoToPots(sourcePhotoId, targetPotIds = []) {
     const db = await this.dbPromise;
-    if (!db || targetPotIds.length === 0) return false;
+    if (!db || targetPotIds.length === 0) {
+      if (!db && targetPotIds && targetPotIds.length > 0) {
+        const sourcePhoto = this.memoryStore.get(sourcePhotoId);
+        if (!sourcePhoto) return false;
+        targetPotIds.forEach(targetId => {
+          const newPhoto = {
+            ...sourcePhoto,
+            id: `photo-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+            potId: targetId,
+            date: new Date().toISOString(),
+            isCover: false,
+            isInitial: false
+          };
+          this.memoryStore.set(newPhoto.id, newPhoto);
+        });
+        return true;
+      }
+      return false;
+    }
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -393,7 +465,17 @@ export class PhotoDatabase {
    */
   async movePhotoToPot(photoId, newPotId) {
     const db = await this.dbPromise;
-    if (!db || !newPotId) return false;
+    if (!db || !newPotId) {
+      if (!db && newPotId) {
+        const photo = this.memoryStore.get(photoId);
+        if (!photo) return false;
+        photo.potId = newPotId;
+        photo.isCover = false;
+        photo.isInitial = false;
+        return true;
+      }
+      return false;
+    }
 
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -412,6 +494,95 @@ export class PhotoDatabase {
           potId: newPotId,
           isCover: false,
           isInitial: false
+        };
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve(true);
+        putReq.onerror = (e) => reject(e.target.error);
+      };
+
+      getReq.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /**
+   * Asigna una foto (por ejemplo, de la galería interna) a una maceta destino
+   * @param {string} photoId
+   * @param {string} targetPotId
+   * @param {boolean} isCover
+   */
+  async assignPhotoToPot(photoId, targetPotId, isCover = false) {
+    const db = await this.dbPromise;
+    if (!db || !photoId || !targetPotId) {
+      if (!db && photoId && targetPotId) {
+        const photo = this.memoryStore.get(photoId);
+        if (!photo) return false;
+        photo.potId = targetPotId;
+        photo.isCover = Boolean(isCover);
+        return true;
+      }
+      return false;
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const getReq = store.get(photoId);
+
+      getReq.onsuccess = () => {
+        const photo = getReq.result;
+        if (!photo) {
+          resolve(false);
+          return;
+        }
+
+        const updated = {
+          ...photo,
+          potId: targetPotId,
+          isCover: Boolean(isCover)
+        };
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve(true);
+        putReq.onerror = (e) => reject(e.target.error);
+      };
+
+      getReq.onerror = (e) => reject(e.target.error);
+    });
+  }
+
+  /**
+   * Actualiza los datos de imagen (DataURL) tras un recorte o rotación
+   * @param {string} photoId
+   * @param {string} newDataUrl
+   */
+  async updatePhotoDataUrl(photoId, newDataUrl) {
+    const db = await this.dbPromise;
+    if (!db || !photoId || !newDataUrl) {
+      if (!db && photoId && newDataUrl) {
+        const photo = this.memoryStore.get(photoId);
+        if (!photo) return false;
+        photo.dataUrl = newDataUrl;
+        photo.croppedAt = new Date().toISOString();
+        return true;
+      }
+      return false;
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const getReq = store.get(photoId);
+
+      getReq.onsuccess = () => {
+        const photo = getReq.result;
+        if (!photo) {
+          resolve(false);
+          return;
+        }
+
+        const updated = {
+          ...photo,
+          dataUrl: newDataUrl,
+          croppedAt: new Date().toISOString()
         };
         const putReq = store.put(updated);
         putReq.onsuccess = () => resolve(true);

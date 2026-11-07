@@ -3,12 +3,16 @@
  * Gestiona el inventario de macetas, el historial de riegos y la configuración.
  */
 
+export const APP_VERSION = '1.5.0';
+
 const STORAGE_KEYS = {
   POTS: 'riego_balcon_pots',
   CONTAINERS: 'riego_balcon_containers',
   ZONES: 'riego_balcon_zones',
   LOGS: 'riego_balcon_history',
-  SETTINGS: 'riego_balcon_settings'
+  SETTINGS: 'riego_balcon_settings',
+  VERSION: 'riego_balcon_app_version',
+  SNAPSHOT: 'riego_balcon_last_snapshot'
 };
 
 const DEFAULT_ZONES = [
@@ -147,15 +151,144 @@ export class Database {
   }
 
   init() {
-    if (!this._getItem(STORAGE_KEYS.POTS)) {
-      this.savePots(DEFAULT_POTS);
+    // 1. Detección de actualización y Safety Snapshot automático (Enfoque B)
+    const savedVersion = this._getItem(STORAGE_KEYS.VERSION);
+    if (savedVersion !== APP_VERSION) {
+      this._createSafetySnapshotOnVersionChange(savedVersion, APP_VERSION);
+      this._setItem(STORAGE_KEYS.VERSION, APP_VERSION);
     }
-    if (!this._getItem(STORAGE_KEYS.CONTAINERS)) {
-      this.saveContainers(DEFAULT_CONTAINERS);
+
+    // 2. Comprobar si el usuario desactivó voluntariamente el modo demo
+    const settings = this.getSettings();
+    const demoDisabled = Boolean(settings.demoModeDisabled);
+
+    if (!demoDisabled) {
+      if (!this._getItem(STORAGE_KEYS.POTS)) {
+        this.savePots(DEFAULT_POTS);
+      }
+      if (!this._getItem(STORAGE_KEYS.CONTAINERS)) {
+        this.saveContainers(DEFAULT_CONTAINERS);
+      }
+      if (!this._getItem(STORAGE_KEYS.ZONES)) {
+        this.saveZones(DEFAULT_ZONES);
+      }
+    } else {
+      if (!this._getItem(STORAGE_KEYS.POTS)) this.savePots([]);
+      if (!this._getItem(STORAGE_KEYS.CONTAINERS)) this.saveContainers([]);
+      if (!this._getItem(STORAGE_KEYS.ZONES)) this.saveZones([]);
     }
-    if (!this._getItem(STORAGE_KEYS.ZONES)) {
-      this.saveZones(DEFAULT_ZONES);
+  }
+
+  /**
+   * Crea una instantánea de seguridad interna ante un cambio de versión o actualización
+   */
+  _createSafetySnapshotOnVersionChange(fromVersion, toVersion) {
+    try {
+      const pots = this.getPots();
+      const containers = this.getContainers();
+      const zones = this.getZones();
+      const settings = this.getSettings();
+      const logs = this.getLogs();
+
+      // Solo crear snapshot si ya hay macetas o datos existentes
+      if (pots && pots.length > 0) {
+        const snapshotKey = `riego_balcon_safety_snapshot_${fromVersion || 'initial'}_to_${toVersion}`;
+        const snapshotData = {
+          date: new Date().toISOString(),
+          fromVersion: fromVersion || '1.4.0',
+          toVersion,
+          pots,
+          containers,
+          zones,
+          settings,
+          logs
+        };
+
+        this._setItem(snapshotKey, JSON.stringify(snapshotData));
+
+        const snapshotMeta = {
+          key: snapshotKey,
+          date: snapshotData.date,
+          fromVersion: snapshotData.fromVersion,
+          toVersion,
+          potCount: pots.length,
+          containerCount: (containers || []).length
+        };
+        this._setItem(STORAGE_KEYS.SNAPSHOT, JSON.stringify(snapshotMeta));
+        console.log(`[Safety Snapshot] Creada copia de seguridad automática (${fromVersion || 'inicial'} -> ${toVersion}) con ${pots.length} macetas.`);
+      }
+    } catch (err) {
+      console.warn('[Safety Snapshot] Error creando snapshot preventivo:', err);
     }
+  }
+
+  /**
+   * Obtiene la última instantánea de seguridad automática
+   */
+  getLatestSafetySnapshot() {
+    try {
+      const meta = this._getItem(STORAGE_KEYS.SNAPSHOT);
+      return meta ? JSON.parse(meta) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Restaura los datos desde una instantánea de seguridad
+   */
+  restoreSafetySnapshot(snapshotKey = null) {
+    try {
+      const targetKey = snapshotKey || this.getLatestSafetySnapshot()?.key;
+      if (!targetKey) return { success: false, message: 'No hay instantánea de seguridad disponible.' };
+
+      const raw = this._getItem(targetKey);
+      if (!raw) return { success: false, message: 'Instantánea no encontrada.' };
+
+      const snapshot = JSON.parse(raw);
+      if (snapshot.pots) this.savePots(snapshot.pots);
+      if (snapshot.containers) this.saveContainers(snapshot.containers);
+      if (snapshot.zones) this.saveZones(snapshot.zones);
+      if (snapshot.settings) this.saveSettings(snapshot.settings);
+      if (snapshot.logs) this.saveLogs(snapshot.logs);
+
+      return {
+        success: true,
+        date: snapshot.date,
+        potCount: (snapshot.pots || []).length
+      };
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  }
+
+  /**
+   * Limpia todos los datos de demostración para arrancar con el balcón en blanco
+   */
+  clearDemoData() {
+    const settings = this.getSettings();
+    settings.demoModeDisabled = true;
+    this.saveSettings(settings);
+
+    this.savePots([]);
+    this.saveContainers([]);
+    this.saveZones([]);
+    this._removeItem(STORAGE_KEYS.LOGS);
+    return true;
+  }
+
+  /**
+   * Carga los datos de demostración de fábrica para experimentar
+   */
+  loadDemoData() {
+    const settings = this.getSettings();
+    settings.demoModeDisabled = false;
+    this.saveSettings(settings);
+
+    this.savePots(DEFAULT_POTS);
+    this.saveContainers(DEFAULT_CONTAINERS);
+    this.saveZones(DEFAULT_ZONES);
+    return DEFAULT_POTS;
   }
 
   getPots() {

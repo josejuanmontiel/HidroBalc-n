@@ -20,19 +20,16 @@ class BackupService {
     const settings = db.getSettings();
     const logs = db.getLogs();
 
-    // Recopilar todas las fotos de todas las macetas de IndexedDB
-    const allPhotos = [];
-    for (const pot of pots) {
-      try {
-        const potPhotos = await photoDb.getPhotosByPot(pot.id);
-        allPhotos.push(...potPhotos);
-      } catch (e) {
-        console.warn('Error leyendo fotos para backup:', e);
-      }
+    // Recopilar todas las fotos (de macetas y de la galería general) de IndexedDB
+    let allPhotos = [];
+    try {
+      allPhotos = await photoDb.getAllPhotos();
+    } catch (e) {
+      console.warn('Error leyendo todas las fotos para backup:', e);
     }
 
     const backupData = {
-      version: '1.4.0',
+      version: '1.5.0',
       exportedAt: new Date().toISOString(),
       appName: 'HidroBalcón PWA',
       data: {

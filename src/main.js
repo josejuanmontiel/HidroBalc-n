@@ -605,9 +605,16 @@ class HidroBalconApp {
                       ⏱️ <span>Timer</span>
                     </button>
                   </div>
-                  <button class="btn btn-sm ${completed ? '' : 'btn-water'} btn-task-water-single" data-id="${pot.id}">
-                    ${completed ? '↩ Volver a Regar' : '💧 Regar'}
-                  </button>
+                  ${(() => {
+                    const allPotsList = this.pots || db.getPots();
+                    const siblings = pot.containerId ? allPotsList.filter(p => p.containerId === pot.containerId) : [];
+                    const isShared = siblings.length >= 2;
+                    return `
+                      <button class="btn btn-sm ${completed ? '' : 'btn-water'} btn-task-water-single" data-id="${pot.id}">
+                        ${completed ? '↩ Volver a Regar' : (isShared ? `💧 Regar Jardinera (${siblings.length})` : '💧 Regar')}
+                      </button>
+                    `;
+                  })()}
                 </div>
               </div>
             `;
@@ -794,7 +801,16 @@ class HidroBalconApp {
               </div>
 
               <div class="pot-compact-actions">
-                <button class="btn btn-sm btn-water btn-action-water" data-id="${pot.id}" title="Marcar como regado">💧</button>
+                ${(() => {
+                  const allPotsList = this.pots || db.getPots();
+                  const siblings = pot.containerId ? allPotsList.filter(p => p.containerId === pot.containerId) : [];
+                  const isShared = siblings.length >= 2;
+                  return `
+                    <button class="btn btn-sm btn-water btn-action-water" data-id="${pot.id}" title="${isShared ? `Regar jardinera compartida (${siblings.length} plantas)` : 'Marcar como regado'}">
+                      ${isShared ? `💧 (${siblings.length})` : '💧'}
+                    </button>
+                  `;
+                })()}
                 <button class="btn btn-sm btn-action-finger" data-id="${pot.id}" title="Prueba del dedo">👉</button>
                 <button class="btn btn-sm btn-action-photos" data-id="${pot.id}" title="Fotos y evolución">📸</button>
                 <button class="btn btn-sm btn-action-edit" data-id="${pot.id}" title="Editar maceta">✏️</button>
@@ -897,9 +913,16 @@ class HidroBalconApp {
 
         <!-- Action buttons -->
         <div class="pot-actions">
-          <button class="btn btn-sm btn-water btn-action-water" data-id="${pot.id}" title="Marcar como regado ahora">
-            💧 Regado
-          </button>
+          ${(() => {
+            const allPotsList = this.pots || db.getPots();
+            const siblings = pot.containerId ? allPotsList.filter(p => p.containerId === pot.containerId) : [];
+            const isShared = siblings.length >= 2;
+            return `
+              <button class="btn btn-sm btn-water btn-action-water" data-id="${pot.id}" title="${isShared ? `Regar jardinera compartida (${siblings.length} plantas)` : 'Marcar como regado ahora'}">
+                ${isShared ? `💧 Regar Jardinera (${siblings.length})` : '💧 Regado'}
+              </button>
+            `;
+          })()}
           <button class="btn btn-sm btn-action-finger" data-id="${pot.id}" title="Calibrar con la prueba del dedo">
             👉 Dedo
           </button>
@@ -1468,6 +1491,8 @@ class HidroBalconApp {
     const container = document.getElementById('modal-container');
     if (!container) return;
 
+    const safetySnapshot = db.getLatestSafetySnapshot();
+
     container.innerHTML = `
       <div class="modal-overlay active" id="backup-modal">
         <div class="modal-content" style="max-width:560px;">
@@ -1481,6 +1506,26 @@ class HidroBalconApp {
           </p>
 
           <div style="display:flex; flex-direction:column; gap:1rem;">
+            <!-- SAFETY SNAPSHOT CARD (ENFOQUE B) -->
+            <div class="backup-card-option" style="border:1px solid rgba(16,185,129,0.3); background:rgba(16,185,129,0.06);">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:0.92rem; color:#34d399;">🛡️ Instantánea de Seguridad Automática</strong>
+                <span class="tag" style="background:rgba(16,185,129,0.2); color:#34d399; border-color:rgba(16,185,129,0.3);">Enfoque B</span>
+              </div>
+              <p style="font-size:0.78rem; color:var(--text-muted); margin:0.3rem 0;">
+                ${safetySnapshot
+                  ? `Instantánea generada automáticamente el ${new Date(safetySnapshot.date).toLocaleString('es-ES', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })} con ${safetySnapshot.potCount} macetas respaldadas antes de actualizar.`
+                  : 'El sistema genera una copia de seguridad interna automática en cada actualización antes de modificar ningún dato.'}
+              </p>
+              ${safetySnapshot ? `
+                <div style="display:flex; gap:0.5rem; margin-top:0.3rem;">
+                  <button class="btn btn-sm" id="btn-restore-safety-snapshot" style="background:rgba(16,185,129,0.2); color:#34d399; border:1px solid rgba(16,185,129,0.4);">
+                    ↩️ Restaurar Instantánea (${safetySnapshot.potCount} macetas)
+                  </button>
+                </div>
+              ` : ''}
+            </div>
+
             <!-- EXPORT CARD -->
             <div class="backup-card-option">
               <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1511,12 +1556,68 @@ class HidroBalconApp {
                 </button>
               </div>
             </div>
+
+            <!-- DEMO DATA MANAGEMENT CARD (TAREA 1) -->
+            <div class="backup-card-option" style="border:1px solid rgba(239,68,68,0.25); background:rgba(239,68,68,0.04);">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <strong style="font-size:0.92rem; color:#ffffff;">🌱 Modo Demostración & Plantillas de Ejemplo</strong>
+                <span class="tag">Configurable</span>
+              </div>
+              <p style="font-size:0.78rem; color:var(--text-muted); margin:0.3rem 0;">
+                Vacía las 5 plantas y jardinera de demostración si deseas empezar a inventariar tu terraza real desde cero, o recárgalas cuando quieras experimentar.
+              </p>
+              <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.4rem;">
+                <button type="button" class="btn btn-sm btn-outline" id="btn-clear-demo-data" style="color:#f87171; border-color:rgba(239,68,68,0.4);">
+                  🧹 Vaciar Datos de Ejemplo (Empezar de cero)
+                </button>
+                <button type="button" class="btn btn-sm btn-outline" id="btn-load-demo-data">
+                  🌱 Cargar Ejemplos de Fábrica
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     `;
 
     document.getElementById('btn-close-backup-modal')?.addEventListener('click', () => { container.innerHTML = ''; });
+
+    // Safety snapshot restore handler
+    document.getElementById('btn-restore-safety-snapshot')?.addEventListener('click', async () => {
+      if (confirm('¿Restaurar los datos de la última instantánea de seguridad automática previa a la actualización?')) {
+        const res = db.restoreSafetySnapshot();
+        if (res.success) {
+          this.showToast(`Instantánea restaurada (${res.potCount} macetas) 🛡️`, 'success');
+          container.innerHTML = '';
+          await this.refreshData();
+          this.render();
+        } else {
+          this.showToast(res.message || 'Error al restaurar instantánea', 'error');
+        }
+      }
+    });
+
+    // Clear demo data handler
+    document.getElementById('btn-clear-demo-data')?.addEventListener('click', async () => {
+      if (confirm('¿Vaciar todos los datos de ejemplo predeterminados para empezar tu balcón en blanco? (Puedes volver a cargarlos en cualquier momento).')) {
+        db.clearDemoData();
+        this.showToast('Datos de ejemplo vaciados. ¡Balcón listo para tus plantas reales! 🌿', 'info');
+        container.innerHTML = '';
+        await this.refreshData();
+        this.render();
+      }
+    });
+
+    // Load demo data handler
+    document.getElementById('btn-load-demo-data')?.addEventListener('click', async () => {
+      if (confirm('¿Cargar las plantas y jardinera de demostración de fábrica?')) {
+        db.loadDemoData();
+        this.showToast('Datos de demostración cargados 🌱', 'success');
+        container.innerHTML = '';
+        await this.refreshData();
+        this.render();
+      }
+    });
 
     // Export handler
     document.getElementById('btn-do-export-backup')?.addEventListener('click', async () => {
@@ -1684,12 +1785,18 @@ class HidroBalconApp {
             <!-- PHOTO UPLOAD -->
             <div class="form-group">
               <label class="form-label">📸 Capturar Foto de Control:</label>
-              <div style="display:flex; align-items:center; gap:0.75rem;">
+              <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
                 <div class="file-input-wrapper">
                   <button class="btn btn-sm btn-water" type="button">
-                    📷 Cámara o Galería
+                    📷 Cámara
                   </button>
-                  <input type="file" id="input-climate-photo" accept="image/*" capture="environment" />
+                  <input type="file" id="input-climate-photo-cam" accept="image/*" capture="environment" />
+                </div>
+                <div class="file-input-wrapper">
+                  <button class="btn btn-sm" type="button">
+                    🖼️ Galería Móvil
+                  </button>
+                  <input type="file" id="input-climate-photo-gallery" accept="image/*" />
                 </div>
                 <div id="climate-photo-preview-wrap" class="photo-preview-wrap" style="display:none;">
                   <img id="climate-photo-preview-img" src="" alt="Previsualización" />
@@ -1744,9 +1851,7 @@ class HidroBalconApp {
     });
 
     // File input change with auto compression
-    const photoInput = document.getElementById('input-climate-photo');
-    photoInput?.addEventListener('change', async (e) => {
-      const file = e.target.files?.[0];
+    const handleClimatePhoto = async (file) => {
       if (file) {
         try {
           const res = await photoDb.compressImage(file);
@@ -1762,7 +1867,10 @@ class HidroBalconApp {
           console.warn('Error comprimiendo foto:', err);
         }
       }
-    });
+    };
+
+    document.getElementById('input-climate-photo-cam')?.addEventListener('change', (e) => handleClimatePhoto(e.target.files?.[0]));
+    document.getElementById('input-climate-photo-gallery')?.addEventListener('change', (e) => handleClimatePhoto(e.target.files?.[0]));
 
     // Submit handler
     document.getElementById('climate-control-form')?.addEventListener('submit', async (e) => {
@@ -1915,10 +2023,21 @@ class HidroBalconApp {
             <div class="photo-upload-row">
               <div class="file-input-wrapper">
                 <button class="btn btn-sm btn-water" type="button">
-                  📷 Capturar / Seleccionar Foto
+                  📷 Cámara
                 </button>
-                <input type="file" id="input-new-photo" accept="image/*" capture="environment" />
+                <input type="file" id="input-new-photo-cam" accept="image/*" capture="environment" />
               </div>
+
+              <div class="file-input-wrapper">
+                <button class="btn btn-sm" type="button">
+                  🖼️ Galería Móvil
+                </button>
+                <input type="file" id="input-new-photo-gallery" accept="image/*" />
+              </div>
+
+              <button class="btn btn-sm btn-outline" type="button" id="btn-pick-from-app-gallery">
+                📁 Galería App
+              </button>
 
               <select id="select-photo-note" class="form-select" style="font-size:0.75rem; padding:0.35rem 0.5rem; flex:1; min-width:160px;">
                 ${PHOTO_TYPE_OPTIONS.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('')}
@@ -1929,8 +2048,13 @@ class HidroBalconApp {
               </button>
             </div>
 
-            <div id="new-photo-preview-wrap" class="photo-preview-wrap" style="align-self:flex-start;">
-              <img id="new-photo-preview-img" src="" alt="Previsualización" />
+            <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.4rem;">
+              <div id="new-photo-preview-wrap" class="photo-preview-wrap" style="display:none;">
+                <img id="new-photo-preview-img" src="" alt="Previsualización" />
+              </div>
+              <button type="button" class="btn btn-sm btn-outline" id="btn-crop-pending-photo" style="display:none;" title="Recortar foto antes de guardar">
+                ✂️ Recortar
+              </button>
             </div>
           </div>
 
@@ -2005,6 +2129,9 @@ class HidroBalconApp {
                         <button class="btn btn-sm btn-make-instruction ${isInstruction ? 'active' : ''}" data-id="${photo.id}" title="${isInstruction ? 'Quitar de bloque de instrucciones' : 'Marcar para bloque de instrucciones/etiqueta'}">
                           ${isInstruction ? '✓ Es Instrucción' : '🏷️ Instrucciones'}
                         </button>
+                        <button class="btn btn-sm btn-crop-photo" data-id="${photo.id}" title="Recortar y rotar encuadre de esta foto">
+                          ✂️ Recortar
+                        </button>
                         <button class="btn btn-sm btn-copy-photo" data-id="${photo.id}" title="Copiar esta foto/instrucción a otras plantas">
                           📋 Copiar
                         </button>
@@ -2052,12 +2179,10 @@ class HidroBalconApp {
       });
     });
 
-    const fileInput = document.getElementById('input-new-photo');
     const saveBtn = document.getElementById('btn-save-photo');
     let pendingCompressed = null;
 
-    fileInput?.addEventListener('change', async (e) => {
-      const file = e.target.files?.[0];
+    const handleUploadFile = async (file) => {
       if (file) {
         try {
           saveBtn.innerText = 'Comprimiendo...';
@@ -2066,10 +2191,12 @@ class HidroBalconApp {
 
           const previewWrap = document.getElementById('new-photo-preview-wrap');
           const previewImg = document.getElementById('new-photo-preview-img');
+          const cropPendingBtn = document.getElementById('btn-crop-pending-photo');
           if (previewWrap && previewImg) {
             previewImg.src = res.dataUrl;
             previewWrap.style.display = 'block';
           }
+          if (cropPendingBtn) cropPendingBtn.style.display = 'inline-block';
 
           saveBtn.disabled = false;
           saveBtn.innerText = 'Guardar Foto';
@@ -2079,6 +2206,48 @@ class HidroBalconApp {
           saveBtn.innerText = 'Guardar Foto';
         }
       }
+    };
+
+    document.getElementById('input-new-photo-cam')?.addEventListener('change', (e) => handleUploadFile(e.target.files?.[0]));
+    document.getElementById('input-new-photo-gallery')?.addEventListener('change', (e) => handleUploadFile(e.target.files?.[0]));
+
+    // Recortar foto nueva antes de guardar
+    document.getElementById('btn-crop-pending-photo')?.addEventListener('click', () => {
+      if (pendingCompressed) {
+        this.openPhotoCropModal(pendingCompressed, (croppedUrl) => {
+          pendingCompressed = croppedUrl;
+          const previewImg = document.getElementById('new-photo-preview-img');
+          if (previewImg) previewImg.src = croppedUrl;
+        });
+      }
+    });
+
+    // Elegir foto existente de la galería general
+    document.getElementById('btn-pick-from-app-gallery')?.addEventListener('click', () => {
+      this.openPhotoPickerModal(async (chosenPhoto) => {
+        await photoDb.copyPhotoToPots(chosenPhoto.id, [potId]);
+        this.showToast('Foto de la galería asociada a esta planta 🌿', 'success');
+        await this.refreshData();
+        this.render();
+        this.openPhotosModal(potId);
+      });
+    });
+
+    // Recortar foto existente
+    document.querySelectorAll('.btn-crop-photo').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const photoId = btn.dataset.id;
+        const targetPhoto = photos.find(p => p.id === photoId);
+        if (targetPhoto) {
+          this.openPhotoCropModal(targetPhoto.dataUrl, async (croppedUrl) => {
+            await photoDb.updatePhotoDataUrl(photoId, croppedUrl);
+            this.showToast('Foto recortada y actualizada ✂️', 'success');
+            await this.refreshData();
+            this.render();
+            this.openPhotosModal(potId);
+          });
+        }
+      });
     });
 
     saveBtn?.addEventListener('click', async () => {
@@ -2339,6 +2508,301 @@ class HidroBalconApp {
     });
   }
 
+  // ================= MODAL DE RECORTE Y ROTACIÓN DE FOTO (CANVAS) ================= //
+
+  openPhotoCropModal(dataUrl, onSave, onCancel = null) {
+    let overlay = document.getElementById('photo-crop-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'photo-crop-overlay';
+      overlay.className = 'modal-overlay active';
+      overlay.style.zIndex = '10005';
+      document.body.appendChild(overlay);
+    }
+
+    let rotation = 0; // 0, 90, 180, 270
+    let zoom = 1.0;
+    let ratio = '1:1'; // '1:1' | '4:3' | 'free'
+    let offsetX = 0;
+    let offsetY = 0;
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+
+    overlay.innerHTML = `
+      <div class="modal-content" style="max-width: 520px; width: 95%;">
+        <div class="modal-header">
+          <h3 class="modal-title">✂️ Recortar y Ajustar Foto</h3>
+          <button class="modal-close" id="btn-close-crop-modal">&times;</button>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:0.65rem;">
+          <!-- CONTROLES SUPERIORES -->
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.4rem;">
+            <div style="display:flex; gap:0.3rem;" id="crop-ratio-buttons">
+              <button type="button" class="btn btn-sm btn-crop-ratio active" data-ratio="1:1" style="font-size:0.75rem; padding:0.2rem 0.5rem;">1:1 Cuadrada</button>
+              <button type="button" class="btn btn-sm btn-crop-ratio" data-ratio="4:3" style="font-size:0.75rem; padding:0.2rem 0.5rem;">4:3 Botánica</button>
+              <button type="button" class="btn btn-sm btn-crop-ratio" data-ratio="free" style="font-size:0.75rem; padding:0.2rem 0.5rem;">Libre</button>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline" id="btn-crop-rotate-90" style="font-size:0.75rem; padding:0.2rem 0.5rem;">
+              🔄 Rotar 90°
+            </button>
+          </div>
+
+          <!-- ÁREA INTERACTIVA DE CANVAS -->
+          <div style="width:100%; height:320px; background:#090d16; border:1px solid rgba(255,255,255,0.1); border-radius:var(--radius-sm); overflow:hidden; display:flex; align-items:center; justify-content:center; touch-action:none; cursor:grab;" id="crop-canvas-wrapper">
+            <canvas id="crop-canvas" width="600" height="600" style="max-width:100%; max-height:100%; object-fit:contain;"></canvas>
+          </div>
+
+          <!-- CONTROLES DE ZOOM Y REPOSICIONAMIENTO -->
+          <div style="display:flex; align-items:center; gap:0.6rem; font-size:0.75rem;">
+            <span style="color:var(--text-muted);">🔍 Zoom:</span>
+            <input type="range" id="crop-zoom-range" min="1" max="3" step="0.05" value="1" style="flex:1;" />
+            <span id="crop-zoom-label" style="color:#38bdf8; min-width:32px; font-weight:700;">1.0x</span>
+            <button type="button" class="btn btn-sm" id="btn-crop-reset-pos" style="font-size:0.7rem; padding:0.15rem 0.4rem;">Centrar</button>
+          </div>
+
+          <p style="font-size:0.68rem; color:var(--text-muted); margin:0; line-height:1.3;">
+            💡 Arrastra la foto con el ratón o el dedo para centrar el brote o la etiqueta de la planta.
+          </p>
+
+          <div style="display:flex; justify-content:flex-end; gap:0.5rem; border-top:1px solid var(--border-subtle); padding-top:0.6rem; margin-top:0.25rem;">
+            <button type="button" class="btn btn-sm" id="btn-cancel-crop">Cancelar</button>
+            <button type="button" class="btn btn-sm btn-primary" id="btn-apply-crop">
+              💾 Aplicar Recorte
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const canvas = overlay.querySelector('#crop-canvas');
+    const ctx = canvas.getContext('2d');
+    const wrapper = overlay.querySelector('#crop-canvas-wrapper');
+    const zoomRange = overlay.querySelector('#crop-zoom-range');
+    const zoomLabel = overlay.querySelector('#crop-zoom-label');
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = dataUrl;
+
+    const redrawCanvas = () => {
+      if (!img.complete || img.naturalWidth === 0) return;
+
+      let targetW = 600;
+      let targetH = 600;
+      if (ratio === '4:3') {
+        targetW = 800;
+        targetH = 600;
+      } else if (ratio === 'free') {
+        const natAspect = img.naturalWidth / img.naturalHeight;
+        if (natAspect >= 1) {
+          targetW = 800;
+          targetH = Math.round(800 / natAspect);
+        } else {
+          targetH = 800;
+          targetW = Math.round(800 * natAspect);
+        }
+      }
+
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+
+      ctx.clearRect(0, 0, targetW, targetH);
+      ctx.save();
+
+      // Transformaciones: mover al centro, rotar y escalar
+      ctx.translate(targetW / 2 + offsetX, targetH / 2 + offsetY);
+      ctx.rotate((rotation * Math.PI) / 180);
+
+      const isRotated90or270 = (rotation === 90 || rotation === 270);
+      const effectiveImgW = isRotated90or270 ? img.naturalHeight : img.naturalWidth;
+      const effectiveImgH = isRotated90or270 ? img.naturalWidth : img.naturalHeight;
+
+      // Escala cover para llenar el canvas
+      const baseScale = Math.max(targetW / effectiveImgW, targetH / effectiveImgH);
+      const finalScale = baseScale * zoom;
+
+      ctx.drawImage(
+        img,
+        -img.naturalWidth * finalScale / (2 * (isRotated90or270 ? (img.naturalHeight / effectiveImgW) : 1)),
+        -img.naturalHeight * finalScale / (2 * (isRotated90or270 ? (img.naturalWidth / effectiveImgH) : 1)),
+        img.naturalWidth * finalScale,
+        img.naturalHeight * finalScale
+      );
+
+      ctx.restore();
+    };
+
+    img.onload = () => redrawCanvas();
+
+    const closeCrop = () => {
+      overlay.remove();
+      if (onCancel) onCancel();
+    };
+
+    overlay.querySelector('#btn-close-crop-modal')?.addEventListener('click', closeCrop);
+    overlay.querySelector('#btn-cancel-crop')?.addEventListener('click', closeCrop);
+
+    // Rotación 90°
+    overlay.querySelector('#btn-crop-rotate-90')?.addEventListener('click', () => {
+      rotation = (rotation + 90) % 360;
+      redrawCanvas();
+    });
+
+    // Ratio chips
+    overlay.querySelectorAll('.btn-crop-ratio').forEach(btn => {
+      btn.addEventListener('click', () => {
+        overlay.querySelectorAll('.btn-crop-ratio').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        ratio = btn.dataset.ratio;
+        redrawCanvas();
+      });
+    });
+
+    // Zoom
+    zoomRange?.addEventListener('input', (e) => {
+      zoom = parseFloat(e.target.value);
+      if (zoomLabel) zoomLabel.innerText = `${zoom.toFixed(1)}x`;
+      redrawCanvas();
+    });
+
+    // Centrar
+    overlay.querySelector('#btn-crop-reset-pos')?.addEventListener('click', () => {
+      offsetX = 0;
+      offsetY = 0;
+      zoom = 1.0;
+      if (zoomRange) zoomRange.value = '1';
+      if (zoomLabel) zoomLabel.innerText = '1.0x';
+      redrawCanvas();
+    });
+
+    // Arrastre con ratón / dedo
+    const startDrag = (clientX, clientY) => {
+      isDragging = true;
+      dragStartX = clientX - offsetX;
+      dragStartY = clientY - offsetY;
+      if (wrapper) wrapper.style.cursor = 'grabbing';
+    };
+
+    const doDrag = (clientX, clientY) => {
+      if (!isDragging) return;
+      offsetX = clientX - dragStartX;
+      offsetY = clientY - dragStartY;
+      redrawCanvas();
+    };
+
+    const endDrag = () => {
+      isDragging = false;
+      if (wrapper) wrapper.style.cursor = 'grab';
+    };
+
+    wrapper?.addEventListener('mousedown', (e) => startDrag(e.clientX, e.clientY));
+    window.addEventListener('mousemove', (e) => doDrag(e.clientX, e.clientY));
+    window.addEventListener('mouseup', endDrag);
+
+    wrapper?.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        startDrag(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 1 && isDragging) {
+        doDrag(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchend', endDrag);
+
+    // Aplicar recorte
+    overlay.querySelector('#btn-apply-crop')?.addEventListener('click', () => {
+      try {
+        let croppedDataUrl = canvas.toDataURL('image/webp', 0.82);
+        if (!croppedDataUrl.startsWith('data:image/webp')) {
+          croppedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        }
+        overlay.remove();
+        if (onSave) onSave(croppedDataUrl);
+      } catch (err) {
+        alert('Error aplicando recorte: ' + err.message);
+      }
+    });
+  }
+
+  // ================= MODAL SELECTOR VISUAL DE FOTOS DE LA APP ================= //
+
+  async openPhotoPickerModal(onSelect, onCancel = null) {
+    let overlay = document.getElementById('photo-picker-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'photo-picker-overlay';
+      overlay.className = 'modal-overlay active';
+      overlay.style.zIndex = '10005';
+      document.body.appendChild(overlay);
+    }
+
+    const allPhotos = await photoDb.getAllPhotos();
+    const pots = db.getPots();
+    const potMap = new Map(pots.map(p => [p.id, p]));
+
+    overlay.innerHTML = `
+      <div class="modal-content" style="max-width: 680px; width: 95%;">
+        <div class="modal-header">
+          <h3 class="modal-title">🖼️ Elegir de la Galería de la App (${allPhotos.length} fotos)</h3>
+          <button class="modal-close" id="btn-close-picker-modal">&times;</button>
+        </div>
+
+        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:0.6rem;">
+          Toca una foto guardada en tu cuaderno botánico para seleccionarla y asociarla:
+        </p>
+
+        <div style="max-height: 400px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); gap: 0.5rem; padding: 0.25rem;">
+          ${allPhotos.length > 0 ? allPhotos.map(ph => {
+            const pot = potMap.get(ph.potId);
+            const potName = pot ? pot.name : 'Galería general';
+            const dStr = new Date(ph.date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+            return `
+              <div class="btn-pick-photo-item" data-id="${ph.id}" style="cursor:pointer; position:relative; border-radius:var(--radius-sm); overflow:hidden; border:2px solid rgba(255,255,255,0.08); background:#020617; aspect-ratio:1/1;" title="${potName} - ${ph.note || dStr}">
+                <img src="${ph.dataUrl}" alt="${potName}" style="width:100%; height:100%; object-fit:cover;" loading="lazy" />
+                <div style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.75); font-size:0.65rem; padding:0.2rem 0.35rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#ffffff;">
+                  ${potName}
+                </div>
+              </div>
+            `;
+          }).join('') : `
+            <div style="grid-column:1/-1; text-align:center; padding:2.5rem; color:var(--text-muted); font-size:0.85rem;">
+              Aún no hay fotos en la galería de la app.
+            </div>
+          `}
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; margin-top:0.75rem; border-top:1px solid var(--border-subtle); padding-top:0.5rem;">
+          <button type="button" class="btn btn-sm" id="btn-cancel-picker">Cancelar</button>
+        </div>
+      </div>
+    `;
+
+    const closePicker = () => {
+      overlay.remove();
+      if (onCancel) onCancel();
+    };
+
+    overlay.querySelector('#btn-close-picker-modal')?.addEventListener('click', closePicker);
+    overlay.querySelector('#btn-cancel-picker')?.addEventListener('click', closePicker);
+
+    overlay.querySelectorAll('.btn-pick-photo-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = el.dataset.id;
+        const chosen = allPhotos.find(p => p.id === id);
+        overlay.remove();
+        if (chosen && onSelect) onSelect(chosen);
+      });
+    });
+  }
+
   // ================= MODAL DE EDICIÓN RÁPIDA DE NOMBRE ================= //
 
   openQuickRenameModal(potId, currentName) {
@@ -2403,6 +2867,10 @@ class HidroBalconApp {
       pot.container = (this.containers || db.getContainers()).find(c => c.id === pot.containerId) || null;
     }
 
+    const allBalconyPots = this.pots || db.getPots();
+    const siblings = pot.containerId ? allBalconyPots.filter(p => p.containerId === pot.containerId) : [];
+    const isSharedContainer = siblings.length >= 2;
+
     const currentDose = this.potDoses[potId] || await wasmEngineService.calculateDose(pot, this.weatherData);
     let selectedGlasses = currentDose.doseGlasses || 2.0;
 
@@ -2431,7 +2899,7 @@ class HidroBalconApp {
       <div class="modal-overlay active" id="water-confirm-modal">
         <div class="modal-content" style="max-width: 480px;">
           <div class="modal-header">
-            <h3 class="modal-title">💧 Confirmar Riego: ${pot.name}</h3>
+            <h3 class="modal-title">${isSharedContainer ? `🪴 Riego de Jardinera: ${pot.container?.name || 'Jardinera'}` : `💧 Confirmar Riego: ${pot.name}`}</h3>
             <button class="modal-close" id="btn-close-water-confirm">&times;</button>
           </div>
 
@@ -2440,6 +2908,22 @@ class HidroBalconApp {
             Dosis calculada por el motor agronómico: <strong>${currentDose.doseGlasses} vasos (~${currentDose.doseMl} ml)</strong>.
             Si decides regar menos o más, ajusta la cantidad real y el motor aprenderá de este aporte.
           </div>
+
+          <!-- AVISO DE JARDINERA COMPARTIDA (TAREA 8) -->
+          ${isSharedContainer ? `
+            <div style="background:rgba(14,165,233,0.12); border:1px solid rgba(14,165,233,0.35); border-radius:var(--radius-sm); padding:0.65rem; margin:0.6rem 0;">
+              <div style="font-weight:700; color:#38bdf8; font-size:0.82rem; display:flex; align-items:center; gap:0.4rem;">
+                🪴 Sustrato Compartido (${siblings.length} plantas)
+              </div>
+              <p style="font-size:0.73rem; color:var(--text-muted); margin:0.25rem 0 0.45rem 0; line-height:1.35;">
+                Esta maceta comparte ${pot.container?.totalLiters || ''}L de tierra con <strong>${siblings.filter(s => s.id !== pot.id).map(s => s.name).join(', ')}</strong>. El agua se infiltra y distribuye por todo el contenedor.
+              </p>
+              <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; font-size:0.78rem; color:#ffffff; font-weight:600;">
+                <input type="checkbox" id="check-water-all-container" checked />
+                <span>💧 Regar conjuntamente las ${siblings.length} plantas de la jardinera (Uniforme)</span>
+              </label>
+            </div>
+          ` : ''}
 
           <!-- DOSIS STEPPER -->
           <div class="dose-adjust-group">
@@ -2558,9 +3042,19 @@ class HidroBalconApp {
             ? `Riego reducido voluntariamente: ${selectedGlasses} vasos (~${actualMl} ml) [Ajuste adaptativo]`
             : (isExtra ? `Riego extra: ${selectedGlasses} vasos (~${actualMl} ml)` : `Riego óptimo: ${selectedGlasses} vasos`));
 
-      db.recordWatering(potId, new Date().toISOString(), noteText);
+      const nowIso = new Date().toISOString();
+      const waterAllContainer = document.getElementById('check-water-all-container')?.checked;
 
-      this.showToast(`¡Riego de ${selectedGlasses} vasos registrado para ${pot.name}! 💧`, 'success');
+      if (isSharedContainer && waterAllContainer) {
+        siblings.forEach(sib => {
+          db.recordWatering(sib.id, nowIso, `Riego uniforme de jardinera "${pot.container?.name || 'Jardinera'}" (${selectedGlasses} vasos)`);
+        });
+        this.showToast(`¡Riego uniforme registrado para las ${siblings.length} plantas de la jardinera! 💧`, 'success');
+      } else {
+        db.recordWatering(potId, nowIso, noteText);
+        this.showToast(`¡Riego de ${selectedGlasses} vasos registrado para ${pot.name}! 💧`, 'success');
+      }
+
       container.innerHTML = '';
       await this.refreshData();
       this.render();
@@ -3147,15 +3641,35 @@ class HidroBalconApp {
       }
 
       gridEl.innerHTML = filtered.map(photo => {
-        const pot = potMap.get(photo.potId) || { name: 'Planta' };
+        const pot = potMap.get(photo.potId) || { name: 'Galería general' };
         const dStr = new Date(photo.date).toLocaleDateString('es-ES', { day:'numeric', month:'short', year:'numeric' });
         return `
-          <div class="global-gallery-item btn-view-full-photo" data-img="${photo.dataUrl}" data-title="${pot.name} (${dStr})" title="${pot.name} - ${photo.note || dStr}">
-            <img src="${photo.dataUrl}" alt="${pot.name}" loading="lazy" />
+          <div class="global-gallery-item" style="position:relative;" title="${pot.name} - ${photo.note || dStr}">
+            <img src="${photo.dataUrl}" alt="${pot.name}" loading="lazy" class="btn-view-full-photo" data-img="${photo.dataUrl}" data-title="${pot.name} (${dStr})" style="cursor:pointer;" />
             <div class="global-gallery-badge">🌿 ${pot.name}</div>
+            <button type="button" class="btn btn-sm btn-crop-gallery-item" data-id="${photo.id}" style="position:absolute; top:5px; right:5px; font-size:0.65rem; padding:0.15rem 0.35rem; background:rgba(0,0,0,0.7); color:#ffffff; border:1px solid rgba(255,255,255,0.25); border-radius:4px; cursor:pointer;" title="Recortar y rotar encuadre">
+              ✂️
+            </button>
           </div>
         `;
       }).join('');
+
+      gridEl.querySelectorAll('.btn-crop-gallery-item').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const photoId = btn.dataset.id;
+          const targetPhoto = allPhotos.find(p => p.id === photoId);
+          if (targetPhoto) {
+            this.openPhotoCropModal(targetPhoto.dataUrl, async (croppedUrl) => {
+              await photoDb.updatePhotoDataUrl(photoId, croppedUrl);
+              this.showToast('Foto de galería recortada y actualizada ✂️', 'success');
+              await this.refreshData();
+              this.render();
+              this.openGlobalGalleryModal();
+            });
+          }
+        });
+      });
 
       gridEl.querySelectorAll('.btn-view-full-photo').forEach(elem => {
         elem.addEventListener('click', () => {
@@ -3190,6 +3704,22 @@ class HidroBalconApp {
             Collage de fotos de tu terraza. Filtra por zona o tipo de toma para estudiar la evolución botánica:
           </p>
 
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.75rem; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:var(--radius-sm); padding:0.5rem 0.75rem;">
+            <div style="font-size:0.78rem; color:#cbd5e1;">
+              📸 <strong>Sube fotos a la galería general</strong> para tenerlas listas al crear o editar macetas:
+            </div>
+            <div style="display:flex; gap:0.4rem;">
+              <div class="file-input-wrapper">
+                <button class="btn btn-sm btn-water" type="button">📷 Cámara</button>
+                <input type="file" id="input-global-gallery-cam" accept="image/*" capture="environment" />
+              </div>
+              <div class="file-input-wrapper">
+                <button class="btn btn-sm" type="button">🖼️ Galería Móvil</button>
+                <input type="file" id="input-global-gallery-file" accept="image/*" />
+              </div>
+            </div>
+          </div>
+
           <!-- FILTER CHIPS -->
           <div class="gallery-filter-chips" id="gallery-chips-wrap">
             <button type="button" class="gallery-chip active" data-filter="all">Todas (${allPhotos.length})</button>
@@ -3212,6 +3742,26 @@ class HidroBalconApp {
     `;
 
     renderGalleryGrid();
+
+    const handleGlobalUpload = async (file) => {
+      if (!file) return;
+      try {
+        const res = await photoDb.compressImage(file);
+        await photoDb.addPhoto({
+          potId: null,
+          dataUrl: res.dataUrl,
+          note: 'Subida a galería general',
+          tag: 'Galería general'
+        });
+        this.showToast('Foto añadida a la galería general 🖼️', 'success');
+        this.openGlobalGalleryModal();
+      } catch (err) {
+        alert('Error subiendo foto a la galería: ' + err.message);
+      }
+    };
+
+    document.getElementById('input-global-gallery-cam')?.addEventListener('change', (e) => handleGlobalUpload(e.target.files?.[0]));
+    document.getElementById('input-global-gallery-file')?.addEventListener('change', (e) => handleGlobalUpload(e.target.files?.[0]));
 
     document.getElementById('btn-close-global-gallery')?.addEventListener('click', () => { container.innerHTML = ''; });
     document.getElementById('btn-close-global-gallery-footer')?.addEventListener('click', () => { container.innerHTML = ''; });
@@ -3817,17 +4367,32 @@ class HidroBalconApp {
             <!-- FOTO DE LA MACETA -->
             <div class="form-group">
               <label class="form-label">📸 Foto de la Planta (opcional):</label>
-              <div style="display:flex; align-items:center; gap:0.75rem;">
+              <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+                <div class="file-input-wrapper">
+                  <button class="btn btn-sm btn-water" type="button">
+                    📷 Cámara
+                  </button>
+                  <input type="file" id="input-pot-photo-cam" accept="image/*" capture="environment" />
+                </div>
+
                 <div class="file-input-wrapper">
                   <button class="btn btn-sm" type="button">
-                    📷 Seleccionar o Tomar Foto
+                    🖼️ Galería Móvil
                   </button>
-                  <input type="file" id="input-pot-photo" accept="image/*" capture="environment" />
+                  <input type="file" id="input-pot-photo-gallery" accept="image/*" />
                 </div>
+
+                <button class="btn btn-sm btn-outline" type="button" id="btn-pot-photo-app-gallery">
+                  📁 Galería App
+                </button>
 
                 <div id="pot-photo-preview-wrap" class="photo-preview-wrap" style="${existingCover ? 'display:block;' : ''}">
                   <img id="pot-photo-preview-img" src="${existingCover || ''}" alt="Previsualización" />
                 </div>
+
+                <button type="button" class="btn btn-sm btn-outline" id="btn-pot-photo-crop" style="${existingCover ? 'display:inline-block;' : 'display:none;'}" title="Recortar foto">
+                  ✂️ Recortar
+                </button>
               </div>
             </div>
 
@@ -3870,15 +4435,6 @@ class HidroBalconApp {
               </div>
               <select id="select-container-parent" class="form-select">
                 <option value="">-- Maceta individual independiente --</option>
-                ${(this.containers || db.getContainers()).map(c => {
-                  const cZone = (this.zones || db.getZones()).find(z => z.id === c.zoneId);
-                  const zoneTag = cZone ? ` [${cZone.name.split('(')[0].trim()}]` : '';
-                  return `
-                    <option value="${c.id}" data-zone="${c.zoneId || ''}" ${c.id === pot.containerId ? 'selected' : ''}>
-                      🪴 ${c.name}${zoneTag} (${c.totalLiters}L, ${c.sections} secciones)
-                    </option>
-                  `;
-                }).join('')}
               </select>
               <span style="font-size:0.7rem; color:var(--text-muted);">
                 Si eliges una jardinera, la planta compartirá el sustrato, la inercia térmica y el material de la jardinera.
@@ -3955,19 +4511,47 @@ class HidroBalconApp {
                 </div>
               </div>
 
-              <div class="form-group">
-                <label class="form-label" for="select-size">Categoría de Volumen de Sustrato individual:</label>
-                <select id="select-size" class="form-select">
-                  ${Object.values(POT_SIZES).map(s => `
-                    <option value="${s.id}" ${s.id === pot.size ? 'selected' : ''}>
-                      ${s.label}
-                    </option>
-                  `).join('')}
-                </select>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.75rem;">
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label" for="input-pot-liters">Volumen Sustrato (Litros):</label>
+                  <input type="number" id="input-pot-liters" class="form-input" min="0.1" max="500" step="0.1" value="${pot.substrateLiters || (pot.dimensions?.length ? Math.round((pot.dimensions.length * (pot.dimensions.width||20) * (pot.dimensions.depth||20))/100)/10 : 8.0)}" placeholder="Ej: 0.8, 2.5, 8.0" />
+                </div>
+                <div class="form-group" style="margin:0;">
+                  <label class="form-label" for="select-size">Categoría de Tamaño:</label>
+                  <select id="select-size" class="form-select">
+                    ${Object.values(POT_SIZES).map(s => `
+                      <option value="${s.id}" ${s.id === pot.size ? 'selected' : ''}>
+                        ${s.label}
+                      </option>
+                    `).join('')}
+                  </select>
+                </div>
               </div>
 
-              <div class="form-group">
-                <label class="form-label" for="select-sun">Exposición Solar:</label>
+              <!-- POSICIÓN EN LA ZONA (SI TIENE ZONA ASIGNADA) O EXPOSICIÓN GENERAL -->
+              <div class="form-group" id="group-zone-position" style="${pot.zoneId ? 'display:block;' : 'display:none;'}">
+                <label class="form-label" for="select-zone-position">📍 Posición en la Zona (Micro-ubicación):</label>
+                <select id="select-zone-position" class="form-select">
+                  <option value="front_line" ${pot.zonePosition === 'front_line' || (!pot.zonePosition && pot.sunExposure === 'full_sun') ? 'selected' : ''}>
+                    ☀️ Primera línea / Barandilla (Pleno sol de la orientación)
+                  </option>
+                  <option value="second_line" ${pot.zonePosition === 'second_line' || (!pot.zonePosition && pot.sunExposure === 'partial_sun') ? 'selected' : ''}>
+                    ⛅ Segunda línea / Tras otras macetas (Sol filtrado / Semisombra)
+                  </option>
+                  <option value="wall_shelter" ${pot.zonePosition === 'wall_shelter' || (!pot.zonePosition && pot.sunExposure === 'shade') ? 'selected' : ''}>
+                    🧱 Pegada a pared / Rincón protegido (Sombra relativa de la zona)
+                  </option>
+                  <option value="awning_under" ${pot.zonePosition === 'awning_under' ? 'selected' : ''}>
+                    ⛱️ Bajo alero / Toldo (Resguardada de lluvia y sol directo)
+                  </option>
+                </select>
+                <span style="font-size:0.68rem; color:var(--text-muted);">
+                  💡 Define cómo incide la luz dentro del microclima de su zona asignada.
+                </span>
+              </div>
+
+              <div class="form-group" id="group-generic-sun" style="${pot.zoneId ? 'display:none;' : 'display:block;'}">
+                <label class="form-label" for="select-sun">Exposición Solar General:</label>
                 <select id="select-sun" class="form-select">
                   ${Object.values(SUN_EXPOSURES).map(sun => `
                     <option value="${sun.id}" ${sun.id === pot.sunExposure ? 'selected' : ''}>
@@ -4003,24 +4587,52 @@ class HidroBalconApp {
       this.openContainersModal();
     });
 
-    let compressedPhotoData = null;
-    const photoInput = document.getElementById('input-pot-photo');
-    photoInput?.addEventListener('change', async (e) => {
-      const file = e.target.files?.[0];
+    let compressedPhotoData = existingCover || null;
+    const previewWrap = document.getElementById('pot-photo-preview-wrap');
+    const previewImg = document.getElementById('pot-photo-preview-img');
+    const cropBtn = document.getElementById('btn-pot-photo-crop');
+
+    const handlePotPhotoUpload = async (file) => {
       if (file) {
         try {
           const res = await photoDb.compressImage(file);
           compressedPhotoData = res.dataUrl;
 
-          const previewWrap = document.getElementById('pot-photo-preview-wrap');
-          const previewImg = document.getElementById('pot-photo-preview-img');
           if (previewWrap && previewImg) {
             previewImg.src = res.dataUrl;
             previewWrap.style.display = 'block';
           }
+          if (cropBtn) cropBtn.style.display = 'inline-block';
         } catch (err) {
           console.warn('Error comprimiendo foto:', err);
         }
+      }
+    };
+
+    document.getElementById('input-pot-photo-cam')?.addEventListener('change', (e) => handlePotPhotoUpload(e.target.files?.[0]));
+    document.getElementById('input-pot-photo-gallery')?.addEventListener('change', (e) => handlePotPhotoUpload(e.target.files?.[0]));
+
+    // Elegir de la galería interna de la app
+    document.getElementById('btn-pot-photo-app-gallery')?.addEventListener('click', () => {
+      this.openPhotoPickerModal((chosen) => {
+        compressedPhotoData = chosen.dataUrl;
+        if (previewWrap && previewImg) {
+          previewImg.src = chosen.dataUrl;
+          previewWrap.style.display = 'block';
+        }
+        if (cropBtn) cropBtn.style.display = 'inline-block';
+        this.showToast('Foto seleccionada de la galería interna 🖼️', 'success');
+      });
+    });
+
+    // Recortar foto seleccionada
+    cropBtn?.addEventListener('click', () => {
+      if (compressedPhotoData) {
+        this.openPhotoCropModal(compressedPhotoData, (croppedUrl) => {
+          compressedPhotoData = croppedUrl;
+          if (previewImg) previewImg.src = croppedUrl;
+          this.showToast('Encuadre ajustado ✂️', 'success');
+        });
       }
     });
 
@@ -4037,6 +4649,21 @@ class HidroBalconApp {
     const rectDInput = document.getElementById('input-dim-pot-d');
     const badgeRoundLiters = document.getElementById('badge-calc-round-liters');
     const badgeRectLiters = document.getElementById('badge-calc-rect-liters');
+    const potLitersInput = document.getElementById('input-pot-liters');
+    const sizeSelect = document.getElementById('select-size');
+
+    const syncSizeCategory = (liters) => {
+      if (!sizeSelect) return;
+      if (liters <= 2.0) {
+        sizeSelect.value = 'small';
+      } else if (liters <= 8.0) {
+        sizeSelect.value = 'medium';
+      } else if (liters <= 25.0) {
+        sizeSelect.value = 'large';
+      } else {
+        sizeSelect.value = 'planter';
+      }
+    };
 
     const updateRoundLiters = () => {
       const d = parseFloat(diameterInput?.value || 0);
@@ -4044,6 +4671,8 @@ class HidroBalconApp {
       if (d > 0 && h > 0) {
         const liters = POT_SHAPES.round.calculateLiters(d, h);
         if (badgeRoundLiters) badgeRoundLiters.innerText = `📐 Calculado: ~${liters} L`;
+        if (potLitersInput) potLitersInput.value = liters;
+        syncSizeCategory(liters);
       }
     };
 
@@ -4054,8 +4683,15 @@ class HidroBalconApp {
       if (l > 0 && w > 0 && d > 0) {
         const liters = POT_SHAPES.rectangular.calculateLiters(l, w, d);
         if (badgeRectLiters) badgeRectLiters.innerText = `📐 Calculado: ~${liters} L`;
+        if (potLitersInput) potLitersInput.value = liters;
+        syncSizeCategory(liters);
       }
     };
+
+    potLitersInput?.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value || 0);
+      if (val > 0) syncSizeCategory(val);
+    });
 
     diameterInput?.addEventListener('input', updateRoundLiters);
     roundHInput?.addEventListener('input', updateRoundLiters);
@@ -4081,59 +4717,85 @@ class HidroBalconApp {
       updateRectLiters();
     });
 
-    // Si se selecciona jardinera previa, ocultar selector de tipo y dimensiones de maceta individual
+    // Gestión de Zona, Micro-posición y Jardinera filtrada
     const selectZone = document.getElementById('select-pot-zone');
     const selectContainer = document.getElementById('select-container-parent');
     const individualFields = document.getElementById('individual-pot-fields');
+    const groupZonePosition = document.getElementById('group-zone-position');
+    const groupGenericSun = document.getElementById('group-generic-sun');
+    const allContainers = this.containers || db.getContainers();
+    const allZones = this.zones || db.getZones();
 
-    const filterContainersByZone = (selectedZoneId) => {
+    const updateZonePositionVisibility = () => {
+      const hasZone = Boolean(selectZone?.value);
+      if (groupZonePosition) groupZonePosition.style.display = hasZone ? 'block' : 'none';
+      if (groupGenericSun) groupGenericSun.style.display = hasZone ? 'none' : 'block';
+    };
+
+    const populateContainersDropdown = (selectedZoneId, preferredContainerId = null) => {
       if (!selectContainer) return;
-      const options = Array.from(selectContainer.querySelectorAll('option'));
-      options.forEach(opt => {
-        if (!opt.value) {
-          opt.hidden = false;
-          return;
-        }
-        const optZone = opt.dataset.zone;
-        if (!selectedZoneId) {
-          opt.hidden = false;
-        } else {
-          opt.hidden = (optZone && optZone !== selectedZoneId);
-        }
+      const currentVal = preferredContainerId !== null ? preferredContainerId : selectContainer.value;
+
+      // Filtrar jardineras según la zona previa elegida
+      const availableContainers = selectedZoneId
+        ? allContainers.filter(c => c.zoneId === selectedZoneId)
+        : allContainers;
+
+      let optionsHtml = `<option value="">-- Maceta individual independiente --</option>`;
+      availableContainers.forEach(c => {
+        const cZone = allZones.find(z => z.id === c.zoneId);
+        const zoneTag = cZone ? ` [${cZone.name.split('(')[0].trim()}]` : ' [Sin zona]';
+        const isSelected = (c.id === currentVal) ? 'selected' : '';
+        optionsHtml += `
+          <option value="${c.id}" data-zone="${c.zoneId || ''}" ${isSelected}>
+            🪴 ${c.name}${selectedZoneId ? '' : zoneTag} (${c.totalLiters}L, ${c.sections} secciones)
+          </option>
+        `;
       });
+
+      if (selectedZoneId && availableContainers.length === 0) {
+        optionsHtml += `<option disabled value="">(No hay jardineras ubicadas en esta zona)</option>`;
+      }
+
+      selectContainer.innerHTML = optionsHtml;
+
+      const stillValid = availableContainers.some(c => c.id === currentVal);
+      if (stillValid) {
+        selectContainer.value = currentVal;
+        if (individualFields) individualFields.style.display = 'none';
+      } else {
+        selectContainer.value = '';
+        if (individualFields) individualFields.style.display = 'flex';
+      }
     };
 
     selectZone?.addEventListener('change', () => {
       const selectedZoneId = selectZone.value;
-      filterContainersByZone(selectedZoneId);
-      // Si la jardinera seleccionada actualmente no pertenece a la nueva zona, resetearla
-      if (selectContainer && selectContainer.value) {
-        const currentSelectedOpt = selectContainer.querySelector(`option[value="${selectContainer.value}"]`);
-        if (currentSelectedOpt && currentSelectedOpt.hidden) {
-          selectContainer.value = '';
-          if (individualFields) individualFields.style.display = 'flex';
-        }
-      }
+      updateZonePositionVisibility();
+      populateContainersDropdown(selectedZoneId);
     });
 
     selectContainer?.addEventListener('change', () => {
-      const hasContainer = Boolean(selectContainer.value);
+      const chosenId = selectContainer.value;
+      const hasContainer = Boolean(chosenId);
       if (individualFields) {
         individualFields.style.display = hasContainer ? 'none' : 'flex';
       }
-      // Si se elige jardinera con zona definida, autoseleccionar la zona correspondiente
+      // Si se elige jardinera con zona definida, sincronizar y fijar la zona
       if (hasContainer) {
-        const chosenContainer = (this.containers || db.getContainers()).find(c => c.id === selectContainer.value);
-        if (chosenContainer && chosenContainer.zoneId && selectZone) {
+        const chosenContainer = allContainers.find(c => c.id === chosenId);
+        if (chosenContainer && chosenContainer.zoneId && selectZone && selectZone.value !== chosenContainer.zoneId) {
           selectZone.value = chosenContainer.zoneId;
+          updateZonePositionVisibility();
+          populateContainersDropdown(chosenContainer.zoneId, chosenId);
         }
       }
     });
 
-    // Filtro inicial si ya viene con zona
-    if (selectZone?.value) {
-      filterContainersByZone(selectZone.value);
-    }
+    // Inicialización del desplegable de jardineras y visibilidad de zona
+    const initialZone = pot.zoneId || (pot.containerId ? allContainers.find(c => c.id === pot.containerId)?.zoneId : '');
+    populateContainersDropdown(initialZone, pot.containerId);
+    updateZonePositionVisibility();
 
     document.getElementById('btn-quick-manage-zones')?.addEventListener('click', () => {
       this.openZonesModal();
@@ -4257,16 +4919,34 @@ class HidroBalconApp {
       }
 
       const size = document.getElementById('select-size').value;
-      const sunExposure = document.getElementById('select-sun').value;
+      const genericSun = document.getElementById('select-sun')?.value || 'partial_sun';
+      const zonePosition = zoneId ? (document.getElementById('select-zone-position')?.value || 'front_line') : null;
       const isCovered = document.getElementById('check-covered').checked;
       const notes = document.getElementById('input-notes').value.trim();
 
+      const manualLiters = parseFloat(document.getElementById('input-pot-liters')?.value || 0);
       let targetPotId = editId;
       const selectedContainer = containerId ? (this.containers || db.getContainers()).find(c => c.id === containerId) : null;
       const effectiveMaterial = selectedContainer ? selectedContainer.material : material;
       const effectiveLiters = selectedContainer
         ? Math.round(((selectedContainer.totalLiters || 9) / Math.max(1, selectedContainer.sections || 1)) * 10) / 10
-        : calculatedSubstrateLiters;
+        : (manualLiters > 0 ? manualLiters : calculatedSubstrateLiters);
+
+      let effectiveSun = genericSun;
+      if (selectedContainer) {
+        effectiveSun = selectedContainer.sunExposure;
+      } else if (zoneId && zonePosition) {
+        if (zonePosition === 'front_line') effectiveSun = 'full_sun';
+        else if (zonePosition === 'second_line') effectiveSun = 'partial_sun';
+        else if (zonePosition === 'wall_shelter') effectiveSun = 'shade';
+        else if (zonePosition === 'awning_under') effectiveSun = 'partial_sun';
+      }
+
+      const effectiveCovered = selectedContainer
+        ? selectedContainer.isCovered
+        : (zonePosition === 'awning_under' ? true : isCovered);
+
+      const effectiveSize = effectiveLiters <= 2 ? 'small' : (effectiveLiters <= 8 ? 'medium' : (effectiveLiters <= 25 ? 'large' : 'planter'));
 
       if (isEdit) {
         db.updatePot(editId, {
@@ -4276,14 +4956,15 @@ class HidroBalconApp {
           importUrl,
           containerId,
           zoneId,
+          zonePosition,
           plantType,
           material: effectiveMaterial,
           shape: selectedContainer ? selectedContainer.shape : shape,
           dimensions: selectedContainer ? selectedContainer.dimensions : dimensions,
           substrateLiters: effectiveLiters,
-          size: selectedContainer ? (effectiveLiters <= 3 ? 'small' : (effectiveLiters <= 10 ? 'medium' : (effectiveLiters <= 25 ? 'large' : 'planter'))) : size,
-          sunExposure: selectedContainer ? selectedContainer.sunExposure : sunExposure,
-          isCovered: selectedContainer ? selectedContainer.isCovered : isCovered,
+          size: selectedContainer ? (effectiveLiters <= 3 ? 'small' : (effectiveLiters <= 10 ? 'medium' : (effectiveLiters <= 25 ? 'large' : 'planter'))) : effectiveSize,
+          sunExposure: effectiveSun,
+          isCovered: effectiveCovered,
           notes
         });
         this.showToast('Planta actualizada y sincronizada con su jardinera', 'success');
@@ -4295,14 +4976,15 @@ class HidroBalconApp {
           importUrl,
           containerId,
           zoneId,
+          zonePosition,
           plantType,
           material: effectiveMaterial,
           shape: selectedContainer ? selectedContainer.shape : shape,
           dimensions: selectedContainer ? selectedContainer.dimensions : dimensions,
           substrateLiters: effectiveLiters,
-          size: selectedContainer ? (effectiveLiters <= 3 ? 'small' : (effectiveLiters <= 10 ? 'medium' : (effectiveLiters <= 25 ? 'large' : 'planter'))) : size,
-          sunExposure: selectedContainer ? selectedContainer.sunExposure : sunExposure,
-          isCovered: selectedContainer ? selectedContainer.isCovered : isCovered,
+          size: selectedContainer ? (effectiveLiters <= 3 ? 'small' : (effectiveLiters <= 10 ? 'medium' : (effectiveLiters <= 25 ? 'large' : 'planter'))) : effectiveSize,
+          sunExposure: effectiveSun,
+          isCovered: effectiveCovered,
           notes
         });
         targetPotId = newPot.id;
