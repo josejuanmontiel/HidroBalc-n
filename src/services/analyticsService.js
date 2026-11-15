@@ -5,7 +5,8 @@ import {
   PLANT_TYPES,
   POT_MATERIALS,
   POT_SIZES,
-  SUN_EXPOSURES
+  SUN_EXPOSURES,
+  FINGER_LEVEL_MOISTURE_MAP
 } from '../engine/irrigationEngine.js';
 
 /**
@@ -113,14 +114,26 @@ export function generatePotAnalyticsTimeline(pot, weather, customSettings = {}, 
   const soakRainThreshold = customSettings?.weatherThresholds?.rainSoakThreshold ?? 15;
   const minEffectiveRain = customSettings?.weatherThresholds?.rainMinEffective ?? 4;
 
-  // Filtrar logs de riego correspondientes a esta maceta O riegos generales a toda la terraza (potId === 'all')
+  // Filtrar logs de riego y pruebas del dedo correspondientes a esta maceta (o riegos generales potId === 'all')
   const potLogs = (logs || []).filter(l => l.potId === pot.id || l.potId === 'all');
+  const wateringLogs = potLogs.filter(l => l.type !== 'finger_test');
+  const fingerLogs = potLogs.filter(l => l.type === 'finger_test' && l.potId === pot.id);
+
   const potLogsByDate = {};
-  potLogs.forEach(l => {
+  wateringLogs.forEach(l => {
     const dStr = (l.date || '').split('T')[0];
     if (dStr) {
       if (!potLogsByDate[dStr]) potLogsByDate[dStr] = [];
       potLogsByDate[dStr].push(l);
+    }
+  });
+
+  const fingerLogsByDate = {};
+  fingerLogs.forEach(l => {
+    const dStr = (l.date || '').split('T')[0];
+    if (dStr) {
+      if (!fingerLogsByDate[dStr]) fingerLogsByDate[dStr] = [];
+      fingerLogsByDate[dStr].push(l);
     }
   });
 
@@ -136,6 +149,7 @@ export function generatePotAnalyticsTimeline(pot, weather, customSettings = {}, 
   let currentMoisture = 100;
   let theoreticalMoisture = 100;
   let reajustes = [];
+  const processedFingerLogDates = new Set();
   const daysResult = [];
   let nextWateringProjectedDate = null;
   let nextTheoreticalProjectedDate = null;
@@ -171,11 +185,16 @@ export function generatePotAnalyticsTimeline(pot, weather, customSettings = {}, 
     if (hadRealWatering) {
       const log = logsOnDay[0] || {};
       const note = log.notes || (log.potId === 'all' ? 'Riego general de terraza' : 'Riego registrado');
+      const glasses = log.doseGlasses ?? pot.calibratedGlasses ?? 2.0;
+      const ml = log.doseMl ?? pot.calibratedDoseMl ?? Math.round(glasses * 250);
       wateringEvent = {
         type: 'real',
         isGeneral: log.potId === 'all',
-        glasses: pot.calibratedGlasses || 2.0,
-        ml: pot.calibratedDoseMl || Math.round((pot.calibratedGlasses || 2.0) * 250),
+        glasses,
+        ml,
+        moistureBefore: log.moistureBefore ?? null,
+        isAdjustment: Boolean(log.isAdjustment),
+        weatherSnapshot: log.weatherSnapshot ?? null,
         note
       };
 
@@ -185,6 +204,7 @@ export function generatePotAnalyticsTimeline(pot, weather, customSettings = {}, 
           date: dateStr,
           type: 'early_watering',
           desc: `Riego preventivo anticipado (${Math.round(currentMoisture)}% humedad). Sustrato recargado al 100%.`,
+          weatherSnapshot: log.weatherSnapshot ?? null,
           note
         };
         reajustes.push(reajusteEvent);
@@ -193,14 +213,16 @@ export function generatePotAnalyticsTimeline(pot, weather, customSettings = {}, 
           date: dateStr,
           type: 'delayed_watering',
           desc: `Riego aplicado con sustrato bajo (${Math.round(currentMoisture)}%).`,
+          weatherSnapshot: log.weatherSnapshot ?? null,
           note
         };
         reajustes.push(reajusteEvent);
-      } else if (note.includes('reducido') || note.includes('inercia') || note.includes('extra') || (pot.calibrationCount && pot.calibrationCount > 0)) {
+      } else if (log.isAdjustment || note.includes('reducido') || note.includes('inercia') || note.includes('extra') || (pot.calibrationCount && pot.calibrationCount > 0)) {
         reajusteEvent = {
           date: dateStr,
           type: 'dose_calibration',
           desc: note,
+          weatherSnapshot: log.weatherSnapshot ?? null,
           note
         };
         reajustes.push(reajusteEvent);
@@ -233,6 +255,37 @@ export function generatePotAnalyticsTimeline(pot, weather, customSettings = {}, 
         theoreticalMoisture = Math.min(100, theoreticalMoisture + recharge);
         rainAbsorbed = rain;
       }
+    }
+
+    // 4b. Calibración con "Prueba del Dedo" registrada en esta fecha
+    const fingerLogsOnDay = fingerLogsByDate[dateStr] || [];
+    if (fingerLogsOnDay.length > 0) {
+      processedFingerLogDates.add(dateStr);
+      const sortedFinger = [...fingerLogsOnDay].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const fLog = sortedFinger[0];
+      const measuredMoisture = typeof fLog.moistureAfter === 'number'
+        ? fLog.moistureAfter
+        : (FINGER_LEVEL_MOISTURE_MAP[fLog.fingerLevel]?.moisturePercent ?? currentMoisture);
+
+      const latestWateringDate = logsOnDay[0]?.date || (lastWateredDateStr === dateStr ? pot.lastWatered : null);
+      if (!hadRealWatering || !latestWateringDate || (fLog.date && fLog.date >= latestWateringDate)) {
+        currentMoisture = measuredMoisture;
+      }
+
+      const fingerReajuste = {
+        date: dateStr,
+        type: 'finger_calibration',
+        fingerLevel: fLog.fingerLevel,
+        moistureBefore: fLog.moistureBefore ?? null,
+        moistureAfter: measuredMoisture,
+        learnedDryingFactorBefore: fLog.learnedDryingFactorBefore ?? 1,
+        learnedDryingFactorAfter: fLog.learnedDryingFactorAfter ?? learnedFactor,
+        weatherSnapshot: fLog.weatherSnapshot ?? null,
+        desc: `👆 Prueba del Dedo (Nivel ${fLog.fingerLevel}): Humedad real medida al ${Math.round(measuredMoisture)}% (previa estimada: ${fLog.moistureBefore ?? '--'}%). Factor: ${fLog.learnedDryingFactorBefore ?? 1}x → ${fLog.learnedDryingFactorAfter ?? learnedFactor}x.`,
+        note: fLog.notes || ''
+      };
+      reajusteEvent = fingerReajuste;
+      reajustes.push(fingerReajuste);
     }
 
     // 5. Previsión futura: si cae al umbral de riego y no se ha marcado ya un siguiente riego
@@ -287,6 +340,29 @@ export function generatePotAnalyticsTimeline(pot, weather, customSettings = {}, 
     });
   }
 
+  // Incluir pruebas del dedo registradas en fechas fuera de la ventana allDays (histórico offline antiguo)
+  fingerLogs.forEach(fLog => {
+    const dateStr = (fLog.date || '').split('T')[0];
+    if (!dateStr || processedFingerLogDates.has(dateStr)) return;
+    const measuredMoisture = typeof fLog.moistureAfter === 'number'
+      ? fLog.moistureAfter
+      : (FINGER_LEVEL_MOISTURE_MAP[fLog.fingerLevel]?.moisturePercent ?? 50);
+    reajustes.push({
+      date: dateStr,
+      type: 'finger_calibration',
+      fingerLevel: fLog.fingerLevel,
+      moistureBefore: fLog.moistureBefore ?? null,
+      moistureAfter: measuredMoisture,
+      learnedDryingFactorBefore: fLog.learnedDryingFactorBefore ?? 1,
+      learnedDryingFactorAfter: fLog.learnedDryingFactorAfter ?? learnedFactor,
+      weatherSnapshot: fLog.weatherSnapshot ?? null,
+      desc: `👆 Prueba del Dedo (Nivel ${fLog.fingerLevel}): Humedad real medida al ${Math.round(measuredMoisture)}% (previa estimada: ${fLog.moistureBefore ?? '--'}%). Factor: ${fLog.learnedDryingFactorBefore ?? 1}x → ${fLog.learnedDryingFactorAfter ?? learnedFactor}x.`,
+      note: fLog.notes || ''
+    });
+  });
+
+  reajustes.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
   // Tasa media de evaporación diaria en el periodo
   const avgDrainDaily = daysResult.length > 0
     ? Math.round((daysResult.reduce((sum, d) => sum + d.dayDrain, 0) / daysResult.length) * 10) / 10
@@ -319,6 +395,7 @@ export function generatePotAnalyticsTimeline(pot, weather, customSettings = {}, 
     summary: {
       totalDays: daysResult.length,
       realWateringsCount: daysResult.filter(d => d.wateringEvent && d.wateringEvent.type === 'real').length,
+      fingerTestsCount: fingerLogs.length,
       frostDaysCount: daysResult.filter(d => d.isFrostDay).length,
       reajustesCount: reajustes.length
     }

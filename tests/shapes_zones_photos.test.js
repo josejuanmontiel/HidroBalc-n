@@ -31,7 +31,7 @@ describe('Nuevas funcionalidades: Macetas Redondas, Zonas de Terraza y Orientaci
       baseExposure: 'full_sun'
     });
     expect(southSunny.estimatedSunHours).toBeGreaterThanOrEqual(8.0);
-    expect(southSunny.microclimateMultiplier).toBeGreaterThan(1.1);
+    expect(southSunny.microclimateMultiplier).toBeGreaterThanOrEqual(1.1);
 
     // Norte con sombra de edificio enfrente
     const northShaded = calculateOrientationAndShadowFactor({

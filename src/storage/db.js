@@ -12,8 +12,13 @@ const STORAGE_KEYS = {
   LOGS: 'riego_balcon_history',
   SETTINGS: 'riego_balcon_settings',
   VERSION: 'riego_balcon_app_version',
-  SNAPSHOT: 'riego_balcon_last_snapshot'
+  SNAPSHOT: 'riego_balcon_last_snapshot',
+  WEATHER_HISTORY: 'riego_balcon_weather_history'
 };
+
+const MAX_LOGS = 5000;
+const MAX_WEATHER_HISTORY_DAYS = 730;
+const FINGER_MOISTURE_PERCENT_FALLBACK = { 0: 15, 1: 35, 2: 68, 3: 92 };
 
 const DEFAULT_ZONES = [
   {
@@ -189,6 +194,7 @@ export class Database {
       const zones = this.getZones();
       const settings = this.getSettings();
       const logs = this.getLogs();
+      const weatherHistory = this.getWeatherHistory();
 
       // Solo crear snapshot si ya hay macetas o datos existentes
       if (pots && pots.length > 0) {
@@ -201,7 +207,8 @@ export class Database {
           containers,
           zones,
           settings,
-          logs
+          logs,
+          weatherHistory
         };
 
         this._setItem(snapshotKey, JSON.stringify(snapshotData));
@@ -251,6 +258,7 @@ export class Database {
       if (snapshot.zones) this.saveZones(snapshot.zones);
       if (snapshot.settings) this.saveSettings(snapshot.settings);
       if (snapshot.logs) this.saveLogs(snapshot.logs);
+      if (snapshot.weatherHistory) this.saveWeatherHistory(snapshot.weatherHistory);
 
       return {
         success: true,
@@ -344,35 +352,102 @@ export class Database {
   }
 
   /**
-   * Registra una acción de riego
+   * Registra una acción de riego con telemetría estructurada
    */
-  recordWatering(potId, timestamp = new Date().toISOString(), notes = '') {
+  recordWatering(potId, timestamp = new Date().toISOString(), notes = '', telemetry = {}) {
     const pots = this.getPots();
     const pot = pots.find(p => p.id === potId);
     if (pot) {
       pot.lastWatered = timestamp;
       this.savePots(pots);
 
-      // Guardar en log histórico
+      // Guardar en log histórico estructurado
       const logs = this.getLogs();
       logs.unshift({
-        id: `log-${Date.now()}`,
+        id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        type: telemetry.type || 'watering',
         potId,
         potName: pot.name,
         date: timestamp,
-        notes
+        notes,
+        doseMl: telemetry.doseMl ?? pot.calibratedDoseMl ?? null,
+        doseGlasses: telemetry.doseGlasses ?? null,
+        moistureBefore: telemetry.moistureBefore ?? null,
+        moistureAfter: 100,
+        isAdjustment: Boolean(telemetry.isAdjustment),
+        learnedDryingFactorBefore: telemetry.learnedDryingFactorBefore ?? pot.learnedDryingFactor ?? 1.0,
+        learnedDryingFactorAfter: telemetry.learnedDryingFactorAfter ?? pot.learnedDryingFactor ?? 1.0,
+        weatherSnapshot: telemetry.weatherSnapshot ?? null
       });
-      // Mantener últimos 100 registros
-      this.saveLogs(logs.slice(0, 100));
+      // Mantener histórico amplio (hasta MAX_LOGS registros)
+      this.saveLogs(logs.slice(0, MAX_LOGS));
       return pot;
     }
     return null;
   }
 
   /**
+   * Registra una "Prueba del Dedo" calibrando la maceta y guardando telemetría histórica completa
+   */
+  recordFingerTest(potId, telemetry = {}) {
+    const pot = this.getPot(potId);
+    if (!pot) return null;
+
+    const timestamp = telemetry.date || new Date().toISOString();
+    const observedLevel = telemetry.observedMoistureLevel ?? 1;
+    const observedMoisturePercent = typeof telemetry.observedMoisturePercent === 'number'
+      ? telemetry.observedMoisturePercent
+      : (FINGER_MOISTURE_PERCENT_FALLBACK[observedLevel] ?? 35);
+
+    const previousFactor = pot.learnedDryingFactor || 1.0;
+    const newFactor = telemetry.newLearnedDryingFactor ?? previousFactor;
+    const previousDoseMl = pot.calibratedDoseMl || null;
+    const newDoseMl = telemetry.newDoseMl ?? previousDoseMl;
+    const calibrationCount = telemetry.calibrationCount ?? ((pot.calibrationCount || 0) + 1);
+
+    const updatedPot = this.updatePot(potId, {
+      learnedDryingFactor: newFactor,
+      calibratedDoseMl: newDoseMl,
+      calibrationCount,
+      lastFingerTest: {
+        date: timestamp,
+        level: observedLevel,
+        moisturePercent: observedMoisturePercent,
+        daysElapsed: telemetry.daysElapsed ?? null,
+        meanTempObserved: telemetry.meanTempObserved ?? null,
+        estimatedMoistureBefore: telemetry.estimatedMoistureBefore ?? null
+      }
+    });
+
+    const logs = this.getLogs();
+    logs.unshift({
+      id: `log-finger-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'finger_test',
+      potId,
+      potName: pot.name,
+      date: timestamp,
+      fingerLevel: observedLevel,
+      moistureBefore: telemetry.estimatedMoistureBefore ?? null,
+      moistureAfter: observedMoisturePercent,
+      daysElapsed: telemetry.daysElapsed ?? null,
+      meanTempObserved: telemetry.meanTempObserved ?? null,
+      learnedDryingFactorBefore: previousFactor,
+      learnedDryingFactorAfter: newFactor,
+      doseMlBefore: previousDoseMl,
+      doseMlAfter: newDoseMl,
+      doseGlassesAfter: telemetry.newDoseGlasses ?? null,
+      weatherSnapshot: telemetry.weatherSnapshot ?? null,
+      notes: telemetry.notes || `Prueba del dedo (Nivel ${observedLevel} -> ${observedMoisturePercent}% humedad). Factor: ${previousFactor}x -> ${newFactor}x`
+    });
+    this.saveLogs(logs.slice(0, MAX_LOGS));
+
+    return updatedPot;
+  }
+
+  /**
    * Marca todas las macetas como regadas hoy
    */
-  recordWaterAll(timestamp = new Date().toISOString()) {
+  recordWaterAll(timestamp = new Date().toISOString(), weatherSnapshot = null) {
     const pots = this.getPots();
     pots.forEach(p => {
       p.lastWatered = timestamp;
@@ -381,13 +456,16 @@ export class Database {
 
     const logs = this.getLogs();
     logs.unshift({
-      id: `log-${Date.now()}`,
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'water_all',
       potId: 'all',
       potName: 'Riego general de terraza (Todas)',
       date: timestamp,
+      moistureAfter: 100,
+      weatherSnapshot,
       notes: 'Riego conjunto con manguera / regadera'
     });
-    this.saveLogs(logs.slice(0, 100));
+    this.saveLogs(logs.slice(0, MAX_LOGS));
     return pots;
   }
 
@@ -569,12 +647,68 @@ export class Database {
     }
   }
 
+  // ================= ARCHIVO HISTÓRICO METEOROLÓGICO DIARIO ================= //
+
+  getWeatherHistory() {
+    try {
+      const data = this._getItem(STORAGE_KEYS.WEATHER_HISTORY);
+      return data ? JSON.parse(data) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  getWeatherHistoryList() {
+    const map = this.getWeatherHistory();
+    return Object.values(map).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  }
+
+  saveWeatherHistory(historyMap) {
+    try {
+      this._setItem(STORAGE_KEYS.WEATHER_HISTORY, JSON.stringify(historyMap || {}));
+    } catch (e) {
+      console.warn('Error saving weather history:', e);
+    }
+  }
+
+  mergeWeatherDays(daysArray = [], locationName = '') {
+    if (!Array.isArray(daysArray) || daysArray.length === 0) {
+      return this.getWeatherHistory();
+    }
+
+    const history = { ...this.getWeatherHistory() };
+    daysArray.forEach(d => {
+      if (!d || !d.date) return;
+      history[d.date] = {
+        date: d.date,
+        maxTemp: d.maxTemp ?? 22,
+        minTemp: d.minTemp ?? 12,
+        rainSum: d.rainSum ?? 0,
+        rainProb: d.rainProb ?? 0,
+        et0: d.et0 ?? 3.5,
+        weatherCode: d.weatherCode ?? 0,
+        locationName: locationName || d.locationName || history[d.date]?.locationName || ''
+      };
+    });
+
+    // Retener hasta MAX_WEATHER_HISTORY_DAYS (2 años) manteniendo las fechas más recientes
+    const dates = Object.keys(history).sort();
+    if (dates.length > MAX_WEATHER_HISTORY_DAYS) {
+      const toRemove = dates.slice(0, dates.length - MAX_WEATHER_HISTORY_DAYS);
+      toRemove.forEach(dateKey => delete history[dateKey]);
+    }
+
+    this.saveWeatherHistory(history);
+    return history;
+  }
+
   resetToDefaults() {
     this.savePots(DEFAULT_POTS);
     this.saveContainers(DEFAULT_CONTAINERS);
     this.saveZones(DEFAULT_ZONES);
     this.resetSettings();
     this._removeItem(STORAGE_KEYS.LOGS);
+    this._removeItem(STORAGE_KEYS.WEATHER_HISTORY);
     return DEFAULT_POTS;
   }
 }

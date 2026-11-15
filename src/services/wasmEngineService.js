@@ -220,11 +220,23 @@ class WasmEngineService {
   calibrateFallback(pot, feedback) {
     const currentFactor = pot.learnedDryingFactor || 1.0;
     const observed = feedback.observedMoistureLevel ?? 1;
+    const daysElapsed = feedback.daysElapsed ?? 2.0;
     let delta = 0;
-    if (observed <= 1 && feedback.daysElapsed <= 2.5) {
-      delta = 0.20; // secado más rápido de lo esperado
-    } else if (observed >= 2 && feedback.daysElapsed >= 3.5) {
-      delta = -0.15; // retiene más humedad
+
+    if (observed === 0) {
+      if (daysElapsed <= 2.5) delta = 0.20;
+      else if (daysElapsed <= 5.0) delta = 0.12;
+      else delta = 0.06;
+    } else if (observed === 1) {
+      if (daysElapsed <= 2.5) delta = 0.15;
+      else if (daysElapsed >= 6.0) delta = -0.08;
+    } else if (observed === 2) {
+      if (daysElapsed >= 3.5) delta = -0.15;
+      else if (daysElapsed >= 2.0) delta = -0.08;
+    } else if (observed >= 3) {
+      if (daysElapsed >= 3.5) delta = -0.22;
+      else if (daysElapsed >= 1.5) delta = -0.15;
+      else delta = -0.05;
     }
 
     const newFactor = Math.max(0.4, Math.min(2.8, Math.round((currentFactor * (1 + delta)) * 100) / 100));

@@ -11,6 +11,7 @@ import {
   calculatePotWatering,
   analyzeWeatherRisks,
   getSeasonalDaylightFactor,
+  FINGER_LEVEL_MOISTURE_MAP,
   PLANT_TYPES,
   POT_MATERIALS,
   POT_SIZES,
@@ -148,12 +149,68 @@ class HidroBalconApp {
     }
   }
 
+  getHydratedPot(potId) {
+    const pot = db.getPot(potId);
+    if (!pot) return null;
+    if (pot.containerId && !pot.container) {
+      pot.container = (this.containers || db.getContainers()).find(c => c.id === pot.containerId) || null;
+    }
+    const zoneId = pot.zoneId || pot.container?.zoneId;
+    if (zoneId && !pot.zone) {
+      pot.zone = (this.zones || db.getZones()).find(z => z.id === zoneId) || null;
+    }
+    return pot;
+  }
+
+  getElapsedWeatherStats(fromDate) {
+    const w = this.weatherData || {};
+    const todayStr = this.getTodayDateStr();
+    const fromStr = fromDate ? new Date(fromDate).toISOString().split('T')[0] : todayStr;
+    const allDays = Array.isArray(w.allDays) ? w.allDays : [];
+    let periodDays = allDays.filter(d => d.date >= fromStr && d.date <= todayStr);
+    if (periodDays.length === 0 && Array.isArray(w.historicalDays)) {
+      periodDays = w.historicalDays;
+    }
+
+    const elapsedRainSum = periodDays.length > 0
+      ? Math.round(periodDays.reduce((sum, d) => sum + (d.rainSum || 0), 0) * 10) / 10
+      : (w.past7DaysSummary?.rainSum ?? w.rainSum ?? 0);
+
+    const elapsedMeanTemp = periodDays.length > 0
+      ? Math.round(periodDays.reduce((sum, d) => sum + ((d.maxTemp ?? 22) + (d.minTemp ?? 12)) / 2, 0) / periodDays.length)
+      : Math.round(w.past7DaysSummary?.meanTemp ?? w.currentTemp ?? 22);
+
+    return {
+      elapsedRainSum,
+      elapsedMeanTemp,
+      daysTracked: periodDays.length
+    };
+  }
+
+  buildWeatherSnapshot(meanTempOverride = null, pastRainOverride = null) {
+    const w = this.weatherData || {};
+    const summary7d = w.past7DaysSummary || {};
+    return {
+      currentTemp: w.currentTemp ?? meanTempOverride ?? 20,
+      maxTemp: w.maxTemp ?? meanTempOverride ?? 24,
+      minTemp: w.minTemp ?? meanTempOverride ?? 14,
+      rainSumToday: w.rainSum ?? 0,
+      et0: w.et0 ?? 3.5,
+      past7DaysRainSum: pastRainOverride !== null ? pastRainOverride : (summary7d.rainSum ?? 0),
+      meanTempObserved: meanTempOverride !== null ? meanTempOverride : (summary7d.meanTemp ?? w.currentTemp ?? 20)
+    };
+  }
+
   getCalculatedPots() {
     const now = new Date();
     return this.pots.map(pot => {
-      // Asegurar que pot.container está disponible
+      // Asegurar que pot.container y pot.zone están disponibles
       if (pot.containerId && !pot.container) {
         pot.container = (this.containers || db.getContainers()).find(c => c.id === pot.containerId) || null;
+      }
+      const zoneId = pot.zoneId || pot.container?.zoneId;
+      if (zoneId && !pot.zone) {
+        pot.zone = (this.zones || db.getZones()).find(z => z.id === zoneId) || null;
       }
       const calculation = calculatePotWatering(pot, this.weatherData, now, this.settings || {});
       return {
@@ -1036,8 +1093,15 @@ class HidroBalconApp {
     document.querySelectorAll('.btn-task-toggle').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const potId = e.currentTarget.dataset.id;
+        const calcPot = calculatedPots.find(p => p.id === potId);
+        const dose = this.potDoses[potId];
         audioService.playWaterDropSound();
-        db.recordWatering(potId);
+        db.recordWatering(potId, new Date().toISOString(), 'Completado desde lista de tareas', {
+          doseMl: dose?.doseMl ?? null,
+          doseGlasses: dose?.doseGlasses ?? null,
+          moistureBefore: calcPot?.calc?.soilMoisturePercent ?? null,
+          weatherSnapshot: this.buildWeatherSnapshot()
+        });
         this.pots = db.getPots();
         this.render();
         this.showToast('¡Maceta regada y marcada como completada! 💧', 'success');
@@ -1058,7 +1122,17 @@ class HidroBalconApp {
 
       if (confirm(`¿Marcar las ${targetPots.length} macetas como regadas hoy?`)) {
         audioService.playWaterDropSound();
-        targetPots.forEach(p => db.recordWatering(p.id));
+        const nowIso = new Date().toISOString();
+        const weatherSnap = this.buildWeatherSnapshot();
+        targetPots.forEach(p => {
+          const dose = this.potDoses[p.id];
+          db.recordWatering(p.id, nowIso, 'Riego masivo desde lista de tareas', {
+            doseMl: dose?.doseMl ?? null,
+            doseGlasses: dose?.doseGlasses ?? null,
+            moistureBefore: p.calc?.soilMoisturePercent ?? null,
+            weatherSnapshot: weatherSnap
+          });
+        });
         this.pots = db.getPots();
         this.render();
         this.showToast('¡Todas las macetas de la lista marcadas como regadas! 🎉', 'success');
@@ -1111,7 +1185,7 @@ class HidroBalconApp {
       waterAllBtn.addEventListener('click', () => {
         if (confirm('¿Marcar todas las macetas como regadas hoy?')) {
           audioService.playWaterDropSound();
-          db.recordWaterAll();
+          db.recordWaterAll(new Date().toISOString(), this.buildWeatherSnapshot());
           this.pots = db.getPots();
           this.render();
           this.showToast('¡Todas las macetas registradas como regadas!', 'success');
@@ -1315,6 +1389,15 @@ class HidroBalconApp {
         this.selectedAnalyticsPotId = e.target.value;
         this.render();
       });
+
+      const exportAnalyticsBtn = document.getElementById('btn-export-analytics-history');
+      exportAnalyticsBtn?.addEventListener('click', () => {
+        const summary = chartAnalyticsView.exportOfflineTelemetry();
+        this.showToast(
+          `📦 Histórico offline exportado (${summary.logsCount} eventos, ${summary.fingerTestsCount} pruebas del dedo, ${summary.weatherHistoryDaysCount} días de clima)`,
+          'success'
+        );
+      });
     }
   }
 
@@ -1324,13 +1407,16 @@ class HidroBalconApp {
     const container = document.getElementById('modal-container');
     if (!container) return;
 
-    const pot = db.getPot(potId);
+    const pot = this.getHydratedPot(potId);
     if (!pot) return;
 
     const now = new Date();
     const lastWateredDate = pot.lastWatered ? new Date(pot.lastWatered) : new Date(now.getTime() - 86400000 * 2);
     const daysSince = Math.max(0.5, Math.round(((now - lastWateredDate) / (1000 * 60 * 60 * 24)) * 10) / 10);
-    const currentTemp = Math.round(this.weatherData?.currentTemp ?? 22);
+    const currentCalc = calculatePotWatering(pot, this.weatherData, now, this.settings || {});
+    const elapsedStats = this.getElapsedWeatherStats(lastWateredDate);
+    const meanTempDefault = elapsedStats.elapsedMeanTemp ?? Math.round(this.weatherData?.currentTemp ?? 22);
+    const isCovered = !!(pot.isUnderRoof || pot.zone?.isUnderRoof);
     const currentDose = this.potDoses[potId] || { doseGlasses: 2.0 };
 
     let selectedLevel = 1; // Nivel 1 por defecto
@@ -1344,41 +1430,49 @@ class HidroBalconApp {
           </div>
 
           <p style="font-size:0.82rem; color:var(--text-muted); line-height:1.4;">
-            Introduce tu dedo en el sustrato para comprobar la profundidad de humedad real. El <strong>motor WebAssembly en Go</strong> ajustará el factor de secado y la próxima dosis.
+            Introduce tu dedo en el sustrato para comprobar la humedad real. Al guardar, se <strong>recalculará la humedad del sustrato al instante</strong>, se ajustará el factor adaptativo y quedará registrado en el <strong>histórico offline</strong> junto con el clima del periodo.
           </p>
+
+          <!-- BANNER PRE-CALIBRACIÓN (ESTADO ESTIMADO Y CLIMA DEL PERIODO) -->
+          <div style="background:rgba(56,189,248,0.08); border:1px solid rgba(56,189,248,0.28); border-radius:var(--radius-sm); padding:0.75rem 0.9rem; margin-bottom:0.75rem; font-size:0.78rem; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:0.45rem 0.8rem;">
+            <div>💧 Humedad estimada actual: <strong>${currentCalc.soilMoisturePercent}%</strong></div>
+            <div>🌧️ Lluvia del periodo: <strong>${elapsedStats.elapsedRainSum} mm</strong></div>
+            <div>🏠 Ubicación: <strong>${isCovered ? 'Bajo techo (cubierta)' : 'Al aire libre (recibe lluvia)'}</strong></div>
+            <div>🧬 Factor aprendizaje actual: <strong>${(pot.learnedDryingFactor || 1.0).toFixed(2)}x</strong></div>
+          </div>
 
           <!-- NIVELES DE HUMEDAD SEGÚN PROFUNDIDAD DEL DEDO -->
           <div class="finger-levels-grid" id="finger-grid">
             <div class="finger-level-card" data-level="0">
               <div class="finger-card-top">
                 <div class="finger-icon-title">🏜️ Nivel 0: Seco Total</div>
-                <span class="finger-depth-tag">> 5 cm</span>
+                <span class="finger-depth-tag">> 5 cm · ${FINGER_LEVEL_MOISTURE_MAP[0].moisturePercent}%</span>
               </div>
-              <div class="finger-card-desc">Sustrato seco hasta el fondo del cepellón. Polvoriento y sin resistencia al dedo.</div>
+              <div class="finger-card-desc">Sustrato seco hasta el fondo del cepellón. Polvoriento y sin resistencia al dedo (fija humedad al ${FINGER_LEVEL_MOISTURE_MAP[0].moisturePercent}%).</div>
             </div>
 
             <div class="finger-level-card selected" data-level="1">
               <div class="finger-card-top">
                 <div class="finger-icon-title">🍂 Nivel 1: Humedad al Fondo</div>
-                <span class="finger-depth-tag">3 - 5 cm</span>
+                <span class="finger-depth-tag">3 - 5 cm · ${FINGER_LEVEL_MOISTURE_MAP[1].moisturePercent}%</span>
               </div>
-              <div class="finger-card-desc">Superficie y falange media secas. Solo se nota fresco al hundir el dedo entero.</div>
+              <div class="finger-card-desc">Superficie y falange media secas. Solo se nota fresco al hundir el dedo entero (fija humedad al ${FINGER_LEVEL_MOISTURE_MAP[1].moisturePercent}%).</div>
             </div>
 
             <div class="finger-level-card" data-level="2">
               <div class="finger-card-top">
                 <div class="finger-icon-title">🌿 Nivel 2: Humedad Óptima</div>
-                <span class="finger-depth-tag">1 - 3 cm</span>
+                <span class="finger-depth-tag">1 - 3 cm · ${FINGER_LEVEL_MOISTURE_MAP[2].moisturePercent}%</span>
               </div>
-              <div class="finger-card-desc">Tierra fresca y húmeda a la profundidad de la primera falange. El ideal botánico.</div>
+              <div class="finger-card-desc">Tierra fresca y húmeda a la profundidad de la primera falange. El ideal botánico (fija humedad al ${FINGER_LEVEL_MOISTURE_MAP[2].moisturePercent}%).</div>
             </div>
 
             <div class="finger-level-card" data-level="3">
               <div class="finger-card-top">
                 <div class="finger-icon-title">💧 Nivel 3: Muy Húmedo</div>
-                <span class="finger-depth-tag">0 - 1 cm</span>
+                <span class="finger-depth-tag">0 - 1 cm · ${FINGER_LEVEL_MOISTURE_MAP[3].moisturePercent}%</span>
               </div>
-              <div class="finger-card-desc">Sustrato empapado desde la misma superficie. La tierra se pega húmeda a la yema.</div>
+              <div class="finger-card-desc">Sustrato empapado desde la misma superficie. La tierra se pega húmeda a la yema (fija humedad al ${FINGER_LEVEL_MOISTURE_MAP[3].moisturePercent}%).</div>
             </div>
           </div>
 
@@ -1391,7 +1485,7 @@ class HidroBalconApp {
 
             <div class="form-group">
               <label class="form-label" for="input-mean-temp">Temperatura media observada (°C):</label>
-              <input type="number" step="1" id="input-mean-temp" class="form-input" value="${currentTemp}" />
+              <input type="number" step="1" id="input-mean-temp" class="form-input" value="${meanTempDefault}" />
             </div>
           </div>
 
@@ -1400,7 +1494,7 @@ class HidroBalconApp {
           <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:0.75rem;">
             <button class="btn" id="btn-cancel-finger">Cerrar</button>
             <button class="btn btn-primary" id="btn-submit-finger">
-              ⚡ Calibrar con Motor Wasm
+              ⚡ Calibrar y Recalcular
             </button>
           </div>
         </div>
@@ -1423,7 +1517,7 @@ class HidroBalconApp {
     // Calibrate button
     document.getElementById('btn-submit-finger')?.addEventListener('click', async () => {
       const daysElapsed = parseFloat(document.getElementById('input-days-elapsed')?.value || '2');
-      const meanTemp = parseFloat(document.getElementById('input-mean-temp')?.value || '22');
+      const meanTemp = parseFloat(document.getElementById('input-mean-temp')?.value || String(meanTempDefault));
       const resultBox = document.getElementById('finger-result-container');
       const submitBtn = document.getElementById('btn-submit-finger');
 
@@ -1441,34 +1535,59 @@ class HidroBalconApp {
         };
 
         const result = await wasmEngineService.calibrateWithFingerTest(pot, feedback);
+        const observedMoisturePercent = FINGER_LEVEL_MOISTURE_MAP[selectedLevel]?.moisturePercent ?? 50;
+        const weatherSnapshot = this.buildWeatherSnapshot(meanTemp, elapsedStats.elapsedRainSum);
 
-        // Guardar parámetros aprendidos en la base de datos
-        db.updatePot(potId, {
-          learnedDryingFactor: result.newLearnedDryingFactor,
-          calibratedDoseMl: result.newDoseMl,
-          calibrationCount: result.calibrationCount
+        // Registrar prueba del dedo + telemetría histórica estructurada + anclaje temporal
+        db.recordFingerTest(potId, {
+          observedMoistureLevel: selectedLevel,
+          observedMoisturePercent,
+          daysElapsed,
+          meanTempObserved: meanTemp,
+          estimatedMoistureBefore: currentCalc.soilMoisturePercent,
+          newLearnedDryingFactor: result.newLearnedDryingFactor,
+          newDoseMl: result.newDoseMl,
+          newDoseGlasses: result.newDoseGlasses,
+          calibrationCount: result.calibrationCount,
+          weatherSnapshot,
+          notes: result.message,
+          date: new Date().toISOString()
         });
+
+        const updatedPot = this.getHydratedPot(potId);
+        const updatedCalc = updatedPot
+          ? calculatePotWatering(updatedPot, this.weatherData, new Date(), this.settings || {})
+          : null;
+        this.pots = db.getPots();
 
         audioService.playChime();
 
         if (resultBox) {
+          const recalcMoisture = updatedCalc?.soilMoisturePercent ?? observedMoisturePercent;
+          const nextDaysText = updatedCalc
+            ? (updatedCalc.daysUntilWatering === 0 ? 'Riego hoy' : `En ${updatedCalc.daysUntilWatering} días`)
+            : '';
           resultBox.innerHTML = `
             <div class="feedback-result-box">
-              <strong style="display:block; margin-bottom:0.25rem;">✨ Calibración Adaptativa Completada</strong>
+              <strong style="display:block; margin-bottom:0.25rem;">✨ Calibración Adaptativa & Recálculo Completado</strong>
               <p>${result.message}</p>
-              <div style="margin-top:0.4rem; font-size:0.75rem; color:#cbd5e1;">
-                Factor de secado adaptativo: <strong>${result.newLearnedDryingFactor}x</strong> | 
-                Nueva dosis: <strong>${result.newDoseGlasses} vasos (~${result.newDoseMl} ml)</strong>
+              <div style="margin-top:0.45rem; font-size:0.76rem; color:#e2e8f0; display:flex; flex-direction:column; gap:0.2rem;">
+                <div>💧 Humedad recalculada: <strong>${currentCalc.soilMoisturePercent}% → ${recalcMoisture}%</strong>${nextDaysText ? ` (${nextDaysText})` : ''}</div>
+                <div>
+                  Factor de secado adaptativo: <strong>${result.newLearnedDryingFactor}x</strong> | 
+                  Nueva dosis: <strong>${result.newDoseGlasses} vasos (~${result.newDoseMl} ml)</strong>
+                </div>
+                <div style="color:#34d399;">📦 Guardado en el histórico offline (prueba del dedo + snapshot climático del periodo).</div>
               </div>
             </div>
           `;
         }
 
         if (submitBtn) {
-          submitBtn.innerText = '✓ Calibrado';
+          submitBtn.innerText = '✓ Calibrado y Guardado';
         }
 
-        this.showToast('¡Modelo adaptativo Wasm actualizado con éxito! ✨', 'success');
+        this.showToast(`Humedad recalculada (${currentCalc.soilMoisturePercent}% → ${updatedCalc?.soilMoisturePercent ?? observedMoisturePercent}%) y archivada offline ✨`, 'success');
 
         setTimeout(async () => {
           container.innerHTML = '';
@@ -2860,12 +2979,8 @@ class HidroBalconApp {
     const container = document.getElementById('modal-container');
     if (!container) return;
 
-    const pot = db.getPot(potId);
+    const pot = this.getHydratedPot(potId);
     if (!pot) return;
-
-    if (pot.containerId && !pot.container) {
-      pot.container = (this.containers || db.getContainers()).find(c => c.id === pot.containerId) || null;
-    }
 
     const allBalconyPots = this.pots || db.getPots();
     const siblings = pot.containerId ? allBalconyPots.filter(p => p.containerId === pot.containerId) : [];
@@ -3011,11 +3126,16 @@ class HidroBalconApp {
       const actualMl = Math.round(selectedGlasses * 250);
       const isReduced = selectedGlasses < currentDose.doseGlasses - 0.2;
       const isExtra = selectedGlasses > currentDose.doseGlasses + 0.2;
+      const isAdjustment = Boolean(isReduced || isExtra || isDeepMoistureCalib);
+      const now = new Date();
+      const previousFactor = pot.learnedDryingFactor || 1.0;
+      const currentCalc = calculatePotWatering(pot, this.weatherData, now, this.settings || {});
+      let newFactor = previousFactor;
 
       audioService.playWaterDropSound();
 
       // Si el usuario decidió regar menos conscientemente o activó inercia profunda, alimentar al modelo adaptativo
-      if (isReduced || isExtra || isDeepMoistureCalib) {
+      if (isAdjustment) {
         try {
           const feedback = {
             daysElapsed: isDeepMoistureCalib ? 3.0 : 2.0,
@@ -3025,6 +3145,7 @@ class HidroBalconApp {
           };
           const calib = await wasmEngineService.calibrateWithFingerTest(pot, feedback);
           if (calib && calib.success) {
+            newFactor = calib.newLearnedDryingFactor;
             db.updatePot(potId, {
               learnedDryingFactor: calib.newLearnedDryingFactor,
               calibratedDoseMl: actualMl,
@@ -3042,16 +3163,42 @@ class HidroBalconApp {
             ? `Riego reducido voluntariamente: ${selectedGlasses} vasos (~${actualMl} ml) [Ajuste adaptativo]`
             : (isExtra ? `Riego extra: ${selectedGlasses} vasos (~${actualMl} ml)` : `Riego óptimo: ${selectedGlasses} vasos`));
 
-      const nowIso = new Date().toISOString();
+      const nowIso = now.toISOString();
+      const weatherSnapshot = this.buildWeatherSnapshot();
       const waterAllContainer = document.getElementById('check-water-all-container')?.checked;
 
       if (isSharedContainer && waterAllContainer) {
         siblings.forEach(sib => {
-          db.recordWatering(sib.id, nowIso, `Riego uniforme de jardinera "${pot.container?.name || 'Jardinera'}" (${selectedGlasses} vasos)`);
+          const hydSib = this.getHydratedPot(sib.id) || sib;
+          const sibCalc = calculatePotWatering(hydSib, this.weatherData, now, this.settings || {});
+          const sibBeforeFactor = sib.id === potId ? previousFactor : (hydSib.learnedDryingFactor || 1.0);
+          const sibAfterFactor = sib.id === potId ? newFactor : sibBeforeFactor;
+          db.recordWatering(
+            sib.id,
+            nowIso,
+            `Riego uniforme de jardinera "${pot.container?.name || 'Jardinera'}" (${selectedGlasses} vasos)`,
+            {
+              doseMl: actualMl,
+              doseGlasses: selectedGlasses,
+              moistureBefore: sibCalc.soilMoisturePercent,
+              isAdjustment,
+              learnedDryingFactorBefore: sibBeforeFactor,
+              learnedDryingFactorAfter: sibAfterFactor,
+              weatherSnapshot
+            }
+          );
         });
         this.showToast(`¡Riego uniforme registrado para las ${siblings.length} plantas de la jardinera! 💧`, 'success');
       } else {
-        db.recordWatering(potId, nowIso, noteText);
+        db.recordWatering(potId, nowIso, noteText, {
+          doseMl: actualMl,
+          doseGlasses: selectedGlasses,
+          moistureBefore: currentCalc.soilMoisturePercent,
+          isAdjustment,
+          learnedDryingFactorBefore: previousFactor,
+          learnedDryingFactorAfter: newFactor,
+          weatherSnapshot
+        });
         this.showToast(`¡Riego de ${selectedGlasses} vasos registrado para ${pot.name}! 💧`, 'success');
       }
 

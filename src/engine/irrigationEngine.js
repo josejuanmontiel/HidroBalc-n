@@ -254,6 +254,16 @@ export const SUN_EXPOSURES = {
 };
 
 /**
+ * Mapeo de niveles de la "Prueba del Dedo" a porcentaje real estimado de humedad en sustrato
+ */
+export const FINGER_LEVEL_MOISTURE_MAP = {
+  0: { level: 0, moisturePercent: 15, label: 'Seco Total (> 5 cm)' },
+  1: { level: 1, moisturePercent: 35, label: 'Humedad al Fondo (3 - 5 cm)' },
+  2: { level: 2, moisturePercent: 68, label: 'Humedad Óptima (1 - 3 cm)' },
+  3: { level: 3, moisturePercent: 92, label: 'Muy Húmedo (0 - 1 cm)' }
+};
+
+/**
  * Factor de ajuste estacional (época del año) en el hemisferio norte:
  * En solsticio de verano (junio) hay ~15h de luz solar y sol cenital;
  * en solsticio de invierno (diciembre) hay ~9h de luz y ángulo solar bajo.
@@ -451,13 +461,16 @@ export function calculatePotWatering(pot, weather, now = new Date(), customSetti
   const risks = analyzeWeatherRisks(weather, customSettings);
   const envFactor = calculateEnvironmentalEvaporation(weather, customSettings);
 
-  // Tasa de secado intrínseca del conjunto (planta * maceta * sustrato * insolación)
+  const learnedDryingFactor = pot.learnedDryingFactor || 1.0;
+
+  // Tasa de secado intrínseca del conjunto (planta * maceta * sustrato * insolación * calibración)
   const baseDryingFactorWithoutEnv = (
     plant.waterDemandFactor *
     material.dryingMultiplier *
     sizeMultiplier *
     sun.dryingMultiplier *
-    microclimate.microclimateMultiplier
+    microclimate.microclimateMultiplier *
+    learnedDryingFactor
   );
 
   // Intervalo nominal de riego para esta maceta en estas condiciones (en días)
@@ -482,6 +495,7 @@ export function calculatePotWatering(pot, weather, now = new Date(), customSetti
   const getDayWeatherRecord = (dateStr) => {
     if (!weather) return null;
     if (weather.allDaysMap && weather.allDaysMap[dateStr]) return weather.allDaysMap[dateStr];
+    if (weather.weatherHistoryMap && weather.weatherHistoryMap[dateStr]) return weather.weatherHistoryMap[dateStr];
     if (Array.isArray(weather.allDays)) {
       const found = weather.allDays.find(d => d.date === dateStr);
       if (found) return found;
@@ -497,21 +511,41 @@ export function calculatePotWatering(pot, weather, now = new Date(), customSetti
     return weather;
   };
 
-  // ================= 1. BALANCE HÍDRICO HISTÓRICO (DESDE ÚLTIMO RIEGO HASTA HOY) ================= //
+  // ================= 1. BALANCE HÍDRICO HISTÓRICO (DESDE ÚLTIMO RIEGO O PRUEBA DEL DEDO HASTA HOY) ================= //
   const currentMidnight = Date.UTC(currentDate.getUTCFullYear(), currentDate.getUTCMonth(), currentDate.getUTCDate());
-  const totalDaysElapsed = Math.max(0, diffMs / 86400000);
+  let anchorDate = lastWateredDate;
+  let initialMoisture = 100; // Al regar, el cepellón parte al 100% de capacidad de campo
+  let anchoredToFingerTest = false;
+
+  if (pot.lastFingerTest && pot.lastFingerTest.date) {
+    const fingerDate = new Date(pot.lastFingerTest.date);
+    if (
+      !isNaN(fingerDate.getTime()) &&
+      fingerDate.getTime() >= lastWateredDate.getTime() &&
+      fingerDate.getTime() <= currentDate.getTime()
+    ) {
+      anchorDate = fingerDate;
+      initialMoisture = typeof pot.lastFingerTest.moisturePercent === 'number'
+        ? pot.lastFingerTest.moisturePercent
+        : (FINGER_LEVEL_MOISTURE_MAP[pot.lastFingerTest.level]?.moisturePercent ?? 50);
+      anchoredToFingerTest = true;
+    }
+  }
+
+  const anchorDiffMs = currentDate.getTime() - anchorDate.getTime();
+  const totalDaysElapsed = Math.max(0, anchorDiffMs / 86400000);
   const fullDays = Math.floor(totalDaysElapsed);
   const remainingFraction = totalDaysElapsed - fullDays;
 
-  let soilMoisture = 100; // Al regar, el cepellón parte al 100% de capacidad de campo
+  let soilMoisture = initialMoisture;
   let totalRainAbsorbed = 0;
 
   if (totalDaysElapsed <= 0) {
-    soilMoisture = 100;
+    soilMoisture = initialMoisture;
   } else {
-    // 1. Días completos transcurridos
+    // 1. Días completos transcurridos desde el punto de anclaje
     for (let step = 0; step < fullDays; step++) {
-      const stepTime = lastWateredDate.getTime() + (step + 0.5) * 86400000;
+      const stepTime = anchorDate.getTime() + (step + 0.5) * 86400000;
       const stepDate = new Date(stepTime);
       const dateStr = formatYMD(stepDate);
       const dayW = getDayWeatherRecord(dateStr) || weather;
@@ -554,9 +588,9 @@ export function calculatePotWatering(pot, weather, now = new Date(), customSetti
 
       soilMoisture = Math.max(0, soilMoisture - fracDrain);
 
-      // Si llovió hoy al aire libre y no hubo días previos o complementa
+      // Si llovió hoy al aire libre y no hubo días previos o complementa (evitando re-aplicar lluvia el mismo día de una prueba del dedo)
       const dayRain = dayW?.rainSum ?? 0;
-      if (!isCovered && dayRain > 0 && fullDays === 0) {
+      if (!isCovered && dayRain > 0 && fullDays === 0 && (!anchoredToFingerTest || formatYMD(anchorDate) !== dateStr)) {
         if (dayRain >= soakRainThreshold) {
           soilMoisture = 100;
           totalRainAbsorbed += dayRain;
@@ -726,6 +760,9 @@ export function calculatePotWatering(pot, weather, now = new Date(), customSetti
     microclimate,
     zone,
     totalRainAbsorbed: Math.round(totalRainAbsorbed * 10) / 10,
-    futureRainPostponed
+    futureRainPostponed,
+    learnedDryingFactor: Math.round(learnedDryingFactor * 100) / 100,
+    lastFingerTest: pot.lastFingerTest || null,
+    anchoredToFingerTest
   };
 }

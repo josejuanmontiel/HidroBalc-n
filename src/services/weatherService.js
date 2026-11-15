@@ -5,9 +5,37 @@
  */
 
 import { simulatorService } from './simulatorService.js';
+import { db } from '../storage/db.js';
 
 const CACHE_KEY = 'riego_weather_cache';
 const LOCATION_KEY = 'riego_saved_location';
+
+function buildPast7DaysSummary(historicalDays = []) {
+  const recent = historicalDays.slice(-7);
+  if (recent.length === 0) {
+    return {
+      rainSum: 0,
+      meanTemp: 20,
+      maxTemp: 24,
+      minTemp: 15,
+      meanEt0: 3.5,
+      daysCount: 0
+    };
+  }
+  const rainSum = Math.round(recent.reduce((sum, d) => sum + (d.rainSum || 0), 0) * 10) / 10;
+  const meanTemp = Math.round((recent.reduce((sum, d) => sum + ((d.maxTemp ?? 22) + (d.minTemp ?? 12)) / 2, 0) / recent.length) * 10) / 10;
+  const maxTemp = Math.round(Math.max(...recent.map(d => d.maxTemp ?? 22)) * 10) / 10;
+  const minTemp = Math.round(Math.min(...recent.map(d => d.minTemp ?? 12)) * 10) / 10;
+  const meanEt0 = Math.round((recent.reduce((sum, d) => sum + (d.et0 ?? 3.5), 0) / recent.length) * 10) / 10;
+  return {
+    rainSum,
+    meanTemp,
+    maxTemp,
+    minTemp,
+    meanEt0,
+    daysCount: recent.length
+  };
+}
 
 // Ubicación por defecto: Madrid, España
 const DEFAULT_LOCATION = {
@@ -57,6 +85,7 @@ export class WeatherService {
       const todayStr = new Date().toISOString().split('T')[0];
       const allDaysMap = {};
       allDays.forEach(d => { allDaysMap[d.date] = d; });
+      const historicalDays = allDays.filter(d => d.date < todayStr);
 
       return {
         ...simData,
@@ -64,8 +93,10 @@ export class WeatherService {
         isSimulated: true,
         allDays,
         allDaysMap,
-        historicalDays: allDays.filter(d => d.date < todayStr),
-        forecastDays: allDays.filter(d => d.date >= todayStr)
+        historicalDays,
+        forecastDays: allDays.filter(d => d.date >= todayStr),
+        weatherHistoryMap: db.getWeatherHistory(),
+        past7DaysSummary: buildPast7DaysSummary(historicalDays)
       };
     }
 
@@ -76,8 +107,16 @@ export class WeatherService {
         if (cached) {
           const parsed = JSON.parse(cached);
           const ageMinutes = (Date.now() - parsed.timestamp) / (1000 * 60);
-          if (ageMinutes < 45) {
-            return parsed.data;
+          if (ageMinutes < 45 && parsed.data) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            if (Array.isArray(parsed.data.allDays)) {
+              db.mergeWeatherDays(parsed.data.allDays.filter(d => d.date <= todayStr), parsed.data.locationName || this.location.name);
+            }
+            return {
+              ...parsed.data,
+              weatherHistoryMap: db.getWeatherHistory(),
+              past7DaysSummary: parsed.data.past7DaysSummary || buildPast7DaysSummary(parsed.data.historicalDays)
+            };
           }
         }
       } catch (e) {
@@ -138,6 +177,7 @@ export class WeatherService {
 
       const historicalDays = allDays.filter(d => d.date < todayStr);
       const forecastDays = allDays.filter(d => d.date >= todayStr);
+      const weatherHistoryMap = db.mergeWeatherDays(allDays.filter(d => d.date <= todayStr), name);
 
       const formatted = {
         locationName: name,
@@ -155,6 +195,8 @@ export class WeatherService {
         allDaysMap,
         historicalDays,
         forecastDays,
+        weatherHistoryMap,
+        past7DaysSummary: buildPast7DaysSummary(historicalDays),
         isSimulated: false,
         updatedAt: new Date().toISOString()
       };
@@ -220,6 +262,9 @@ export class WeatherService {
       allDaysMap[dateStr] = item;
     }
 
+    const historicalDays = allDays.filter(d => d.date < todayStr);
+    const forecastDays = allDays.filter(d => d.date >= todayStr);
+
     return {
       locationName: this.location.name,
       currentTemp: 21,
@@ -232,8 +277,10 @@ export class WeatherService {
       description: 'Clima templado (Estimación local)',
       allDays,
       allDaysMap,
-      historicalDays: allDays.filter(d => d.date < todayStr),
-      forecastDays: allDays.filter(d => d.date >= todayStr),
+      historicalDays,
+      forecastDays,
+      weatherHistoryMap: db.getWeatherHistory(),
+      past7DaysSummary: buildPast7DaysSummary(historicalDays),
       isSimulated: false,
       isFallback: true,
       updatedAt: new Date().toISOString()

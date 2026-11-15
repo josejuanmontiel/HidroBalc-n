@@ -27,6 +27,7 @@ export const chartAnalyticsView = {
     const timeline = generatePotAnalyticsTimeline(pot, weatherData, customSettings, logs);
     const summary = timeline.summary || {};
     const factors = timeline.factors || {};
+    const weatherHistoryCount = db.getWeatherHistoryList().length;
 
     const diffDays = (factors.calibratedIntervalDays && factors.nominalIntervalDays)
       ? Math.round((factors.calibratedIntervalDays - factors.nominalIntervalDays) * 10) / 10
@@ -56,6 +57,9 @@ export const chartAnalyticsView = {
                   </option>
                 `).join('')}
               </select>
+              <button id="btn-export-analytics-history" class="btn btn-sm btn-outline" title="Descargar histórico completo de pruebas del dedo, riegos y clima diario para análisis offline">
+                📥 Exportar Telemetría & Clima Offline (.json)
+              </button>
               <button id="btn-analytics-back" class="btn btn-sm" title="Volver a la vista del balcón">
                 🪴 Volver al Balcón
               </button>
@@ -176,8 +180,12 @@ export const chartAnalyticsView = {
 
         <!-- LISTADO DE EVENTOS Y REAJUSTES DEL MODELO -->
         <div class="analytics-events-card">
-          <div class="events-card-header">
+          <div class="events-card-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
             <h3>📑 Registro de Riegos y Reajustes del Algoritmo (${timeline.reajustes.length + summary.realWateringsCount})</h3>
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap; font-size:0.72rem;">
+              <span class="tag tag-covered">👆 Pruebas del dedo: ${summary.fingerTestsCount || 0}</span>
+              <span class="tag tag-zone">🌦️ Archivo climático offline: ${weatherHistoryCount} días</span>
+            </div>
           </div>
           
           ${(timeline.reajustes.length === 0 && summary.realWateringsCount === 0) ? `
@@ -186,34 +194,87 @@ export const chartAnalyticsView = {
             </div>
           ` : `
             <div class="events-timeline-list">
-              ${timeline.reajustes.map(r => `
-                <div class="event-item event-reajuste">
-                  <div class="event-date">📅 ${r.date}</div>
-                  <div class="event-body">
-                    <div class="event-badge badge-reajuste">⚙️ REAJUSTE DE MODELO</div>
-                    <div class="event-desc">${r.desc}</div>
-                    ${r.note ? `<div class="event-note">Detalle: ${r.note}</div>` : ''}
-                  </div>
-                </div>
-              `).join('')}
-
-              ${timeline.days.filter(d => d.wateringEvent && d.wateringEvent.type === 'real').map(d => `
-                <div class="event-item event-watering">
-                  <div class="event-date">📅 ${d.date}</div>
-                  <div class="event-body">
-                    <div class="event-badge badge-water">${d.wateringEvent.isGeneral ? '🌐 RIEGO GENERAL TERRAZA' : '💧 RIEGO EFECTUADO'}</div>
-                    <div class="event-desc">
-                      Aporte de agua registrado. Humedad reiniciada al 100% de capacidad de campo.
+              ${timeline.reajustes.map(r => {
+                const isFinger = r.type === 'finger_calibration';
+                const ws = r.weatherSnapshot;
+                const weatherLine = ws
+                  ? `🌦️ Clima registrado: ${ws.meanTempObserved ?? ws.currentTemp ?? '--'}°C media | 🌧️ ${ws.past7DaysRainSum ?? ws.rainSumToday ?? 0} mm (7d)`
+                  : '';
+                return `
+                  <div class="event-item event-reajuste" style="${isFinger ? 'border-left-color:#14b8a6; background:rgba(20,184,166,0.06);' : ''}">
+                    <div class="event-date">📅 ${r.date}</div>
+                    <div class="event-body">
+                      <div class="event-badge badge-reajuste" style="${isFinger ? 'background:rgba(20,184,166,0.2); color:#5eead4; border-color:rgba(20,184,166,0.4);' : ''}">
+                        ${isFinger ? '👆 PRUEBA DEL DEDO' : '⚙️ REAJUSTE DE MODELO'}
+                      </div>
+                      <div class="event-desc">${r.desc}</div>
+                      ${weatherLine ? `<div class="event-note" style="color:#93c5fd; font-style:normal;">${weatherLine}</div>` : ''}
+                      ${r.note ? `<div class="event-note">Detalle: ${r.note}</div>` : ''}
                     </div>
-                    ${d.wateringEvent.note ? `<div class="event-note">${d.wateringEvent.note}</div>` : ''}
                   </div>
-                </div>
-              `).join('')}
+                `;
+              }).join('')}
+
+              ${timeline.days.filter(d => d.wateringEvent && d.wateringEvent.type === 'real').map(d => {
+                const we = d.wateringEvent;
+                const ws = we.weatherSnapshot;
+                const doseInfo = we.ml ? ` (${we.glasses ?? '--'} vasos / ~${we.ml} ml)` : '';
+                const prevInfo = typeof we.moistureBefore === 'number' ? ` Humedad previa: ${we.moistureBefore}%.` : '';
+                const weatherLine = ws
+                  ? `🌦️ Clima al regar: ${ws.currentTemp ?? '--'}°C | 🌧️ ${ws.past7DaysRainSum ?? 0} mm últimos 7d`
+                  : '';
+                return `
+                  <div class="event-item event-watering">
+                    <div class="event-date">📅 ${d.date}</div>
+                    <div class="event-body">
+                      <div class="event-badge badge-water">${we.isGeneral ? '🌐 RIEGO GENERAL TERRAZA' : '💧 RIEGO EFECTUADO'}</div>
+                      <div class="event-desc">
+                        Aporte de agua registrado${doseInfo}.${prevInfo} Humedad reiniciada al 100%.
+                      </div>
+                      ${weatherLine ? `<div class="event-note" style="color:#93c5fd; font-style:normal;">${weatherLine}</div>` : ''}
+                      ${we.note ? `<div class="event-note">${we.note}</div>` : ''}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
             </div>
           `}
         </div>
       </section>
     `;
+  },
+
+  exportOfflineTelemetry() {
+    const pots = db.getPots();
+    const logs = db.getLogs();
+    const weatherHistory = db.getWeatherHistoryList();
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      appName: 'HidroBalcón PWA',
+      summary: {
+        potsCount: pots.length,
+        logsCount: logs.length,
+        fingerTestsCount: logs.filter(l => l.type === 'finger_test').length,
+        wateringsCount: logs.filter(l => l.type === 'watering' || l.type === 'water_all' || !l.type).length,
+        weatherHistoryDaysCount: weatherHistory.length
+      },
+      pots,
+      logs,
+      weatherHistory
+    };
+
+    const jsonStr = JSON.stringify(payload, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const dateStr = new Date().toISOString().split('T')[0];
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `hidrobalcon-telemetria-offline-${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    return payload.summary;
   },
 
   initChart(timeline) {

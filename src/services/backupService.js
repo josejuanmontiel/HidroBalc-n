@@ -19,6 +19,7 @@ class BackupService {
     const zones = db.getZones();
     const settings = db.getSettings();
     const logs = db.getLogs();
+    const weatherHistory = db.getWeatherHistory();
 
     // Recopilar todas las fotos (de macetas y de la galería general) de IndexedDB
     let allPhotos = [];
@@ -38,6 +39,7 @@ class BackupService {
         zones,
         settings,
         logs,
+        weatherHistory,
         photos: allPhotos
       }
     };
@@ -59,7 +61,8 @@ class BackupService {
     return {
       potCount: pots.length,
       logCount: logs.length,
-      photoCount: allPhotos.length
+      photoCount: allPhotos.length,
+      weatherDaysCount: Object.keys(weatherHistory || {}).length
     };
   }
 
@@ -77,7 +80,7 @@ class BackupService {
             throw new Error('El archivo no tiene el formato de copia de seguridad de HidroBalcón.');
           }
 
-          const { pots, containers, zones, settings, logs, photos } = content.data;
+          const { pots, containers, zones, settings, logs, weatherHistory, photos } = content.data;
 
           // 1. Restaurar macetas
           db.savePots(pots || []);
@@ -100,6 +103,11 @@ class BackupService {
           // 2. Restaurar historial
           if (logs && Array.isArray(logs)) {
             db.saveLogs(logs);
+          }
+
+          // 2.1 Restaurar archivo histórico meteorológico diario
+          if (weatherHistory && typeof weatherHistory === 'object') {
+            db.saveWeatherHistory(weatherHistory);
           }
 
           // 3. Restaurar fotos en IndexedDB
@@ -127,7 +135,8 @@ class BackupService {
             success: true,
             potCount: pots.length,
             logCount: (logs || []).length,
-            photoCount: restoredPhotos
+            photoCount: restoredPhotos,
+            weatherDaysCount: weatherHistory ? Object.keys(weatherHistory).length : 0
           });
         } catch (err) {
           reject(err);
