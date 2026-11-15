@@ -376,3 +376,36 @@ Cuando retomemos esta fase, los pasos de ejecución serán:
 4. **Desarrollar algoritmos analíticos en `internal/analyzer`:** Reglas de consistencia de contenedor, minero de riegos generales y roommate matcher.
 5. **Implementar CLI y Servidor en `cmd/` y `internal/api`:** Montar endpoints HTTP y handlers de inspección/poda.
 6. **Diseñar la Web SPA en `web/index.html`:** Crear la interfaz con Drag&Drop, tarjetas KPI, pestañas de análisis y selector de saneamiento de 1-clic con descarga directa.
+
+---
+
+### 📝 Lecciones Aprendidas del Caso Real (Semana de Lluvias & Prueba del Dedo - 15/11/2026)
+
+Tras implementar la **telemetría histórica de prueba del dedo** y el **archivo climático multianual** en la PWA (v1.5.0), se realizó una auditoría empírica completa sobre las 20 macetas del balcón tras una semana de lluvias continuas (exportada en `hidrobalcon-backup-2026-11-15.json`).
+
+Estas reflexiones definen nuevos requisitos directos para el motor offline en Go (`BalconMetrics`):
+
+#### 1. Discrepancia Modelo Teórico vs Realidad en Lluvias de Otoño
+- **Datos meteorológicos reales registrados (`weatherHistory`):** 55.6 mm de lluvia acumulada (pico de 35.8 mm el 11-nov), $ET_0$ media de 0.95 mm/día y temperatura media de 13.4 °C.
+- **Lo que predecía el modelo diario:** Para 14 macetas estimaba humedad al 0% o residual (<7%) porque llevaban 8 días sin riego de grifo.
+- **Lo que reveló el dedo:**
+  - 12 macetas en Nivel 2 (Óptima, 68%): coles, habas, edamame, pothos, aromáticas.
+  - 5 macetas en Nivel 3 (Saturada / Empapada, 92%): pensamientos, cyclamen, calluna, viola.
+  - Solo 3 macetas en Nivel 1 (Seco al fondo, 35%): los 2 cactus y el arándano rojo.
+- **Conclusión para el analizador:** El analizador offline debe evaluar el **índice de eficiencia de recarga por lluvia** ($\text{Infiltración real} / \text{Lluvia caída}$). En macetas al aire libre en otoño frío, la evaporación superficial se frena y la lluvia recarga el sustrato casi al 100%, dejando el cálculo de días teóricos descalibrado si no hay ajuste estacional de retención.
+
+#### 2. La Decisión Humana Evitó un Sobre-riego Masivo (Semáforo de Asfixia Radicular)
+- De 20 macetas, el usuario **solo regó 3** (las que estaban al 35%). Las otras 17 quedaron protegidas de pudrición de raíz.
+- **Regla para `BalconMetrics`:** Implementar un **módulo de "Riegos Evitados / Agua Ahorrada"**, calculando cuántos litros de agua y cuántos eventos de estrés por asfixia radicular evitó el usuario al validar con la prueba del dedo en lugar de regar por inercia o por calendario fijo.
+
+#### 3. Aprendizaje Asimétrico de Factores de Secado (`learnedDryingFactor`)
+- El motor adaptativo ajustó los factores de secado a la baja en casi todo el balcón (ej. Pensamientos a `0.55x` y `0.65x`, Coles a `0.59x`–`0.73x`), pero mantuvo los cactus más altos (`0.79x`–`0.93x`).
+- **Oportunidad para el CLI/Servidor en Go:**
+  - Correlacionar `learnedDryingFactor` frente a la estación del año (otoño vs verano).
+  - Un factor de `0.60x` en noviembre puede ser perfecto para invierno pero peligroso en julio con 38 °C.
+  - El analizador offline debe sugerir **curvas estacionales de factores aprendidos** ($F_{\text{aprendido}}(\text{mes})$) en lugar de un factor escalar único estático.
+
+#### 4. Consumo y Validación de Telemetría JSON
+- La estructura introducida con `weatherHistory` (hasta 730 días) y logs tipificados (`type: "finger_test"` con `moistureBefore`, `moistureAfter`, `weatherSnapshot`) permite que `BalconMetrics` ejecute simulaciones contrafácticas:
+  - *¿Qué habría pasado si se hubiera regado con la dosis teórica el día 10?*
+  - *Curva de secado empírica real basada en los 8 días de Open-Meteo archivados.*
